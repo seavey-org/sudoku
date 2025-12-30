@@ -31,13 +31,13 @@ func Generate(difficulty string) Puzzle {
 	var k int
 	switch difficulty {
 	case "easy":
-		k = 30
+		k = 40
 	case "hard":
-		k = 50
+		k = 64
 	case "medium":
 		fallthrough
 	default:
-		k = 40
+		k = 50
 	}
 
 	puzzleBoard := g
@@ -156,11 +156,27 @@ func (g *Grid) fillRemaining(i, j int) bool {
 
 // removeDigits tries to remove K digits while maintaining a unique solution.
 func (g *Grid) removeDigits(k int) {
+	// Create a list of all cell positions
+	type point struct{ r, c int }
+	cells := make([]point, 0, N*N)
+	for i := 0; i < N; i++ {
+		for j := 0; j < N; j++ {
+			cells = append(cells, point{i, j})
+		}
+	}
+
+	// Shuffle the list
+	rand.Shuffle(len(cells), func(i, j int) {
+		cells[i], cells[j] = cells[j], cells[i]
+	})
+
 	count := k
-	for count != 0 {
-		cellId := rand.Intn(N * N)
-		i := cellId / N
-		j := cellId % N
+	for _, cell := range cells {
+		if count <= 0 {
+			break
+		}
+
+		i, j := cell.r, cell.c
 		if g[i][j] != 0 {
 			backup := g[i][j]
 			g[i][j] = 0
@@ -168,7 +184,7 @@ func (g *Grid) removeDigits(k int) {
 			// Check if solution is unique
 			solutions := 0
 			g.solveCount(&solutions)
-			
+
 			if solutions != 1 {
 				g[i][j] = backup // Put it back if not unique
 			} else {
@@ -188,7 +204,7 @@ func (g *Grid) solveCount(count *int) {
 						g.solveCount(count)
 						g[i][j] = 0
 						if *count > 1 {
-							return 
+							return
 						}
 					}
 				}

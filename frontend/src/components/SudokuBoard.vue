@@ -205,7 +205,8 @@ const removeCandidates = (r: number, c: number, val: number) => {
 }
 
 // Interaction Handler
-const handleInputKey = (e: KeyboardEvent, r: number, c: number) => {
+// We use @keydown for desktop navigation/shortcuts and @input for value entry (mobile friendly)
+const handleKeydown = (e: KeyboardEvent, r: number, c: number) => {
     const key = e.key
     
     // Ctrl+Z for Undo
@@ -215,9 +216,10 @@ const handleInputKey = (e: KeyboardEvent, r: number, c: number) => {
         return
     }
 
-    // Allow navigation and deletion normally
+    // Navigation (optional enhancement) and Deletion
     if (['Backspace', 'Delete', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key)) {
         if (['Backspace', 'Delete'].includes(key)) {
+            e.preventDefault() // Prevent default backspace nav
             if (!isFixed.value[r]![c] && board.value[r]![c] !== null) {
                  saveState() // Save before clearing
                  board.value[r]![c] = null
@@ -225,53 +227,58 @@ const handleInputKey = (e: KeyboardEvent, r: number, c: number) => {
         }
         return
     }
+    
+    // Prevent default for other keys to strictly control input via @input or validation
+    // However, on mobile, preventing default on keydown often stops the soft keyboard from sending input.
+    // So we primarily rely on InputEvent or just validating the key if possible.
+    // For desktop "1-9", we can keep the preventDefault logic if we want, OR just rely on @input.
+    // Let's stick to using @input for the value changes to support mobile keyboards better.
+}
 
-    // Handle numbers 1-9
-    if (/^[1-9]$/.test(key)) {
-        e.preventDefault() // We handle the value manually
+const handleInput = (e: Event, r: number, c: number) => {
+    const input = e.target as HTMLInputElement
+    const val = input.value
+    
+    // Reset input value immediately so Vue state controls it
+    // We'll set the board state which will update the input value via binding
+    input.value = board.value[r]![c]?.toString() || ''
+
+    if (!val) return // Empty
+
+    // Get the last character entered (to handle if someone types fast or mobile weirdness)
+    const char = val.slice(-1)
+
+    // Check if 1-9
+    if (/^[1-9]$/.test(char)) {
+        const num = parseInt(char)
         
-        // Prevent editing if fixed
         if (isFixed.value[r]![c]) return
 
-        const num = parseInt(key)
-        
-        // Save state before modification
         saveState()
 
         if (isNoteMode.value) {
-            // Toggle candidate
             const currentCandidates = candidates.value[r]![c]!
             const idx = currentCandidates.indexOf(num)
             if (idx > -1) {
-                // Removing a candidate manually
                 currentCandidates.splice(idx, 1)
                 eliminatedCandidates.value[r]![c]!.add(num)
             } else {
-                // Adding a candidate manually (override elimination)
                 currentCandidates.push(num)
                 currentCandidates.sort()
                 eliminatedCandidates.value[r]![c]!.delete(num)
             }
         } else {
-            // Set value
             board.value[r]![c] = num
-            // Clear candidates for this cell when a value is set
             candidates.value[r]![c] = []
             
-            // Auto Eliminate Peer Candidates (Always ON)
-            // Only eliminate if the number is correct (matches solution)
             if (num === solution.value[r]![c]) {
                 removeCandidates(r, c, num)
             }
 
-            // Auto Check if full
             if (isBoardFull()) {
                 checkSolution()
             }
         }
-    } else {
-        // Block other keys
-        e.preventDefault()
     }
 }
 
@@ -344,8 +351,9 @@ onMounted(() => {
                     type="text"
                     inputmode="numeric"
                     :value="cell"
-                    @keydown="handleInputKey($event, rIndex, cIndex)"
-                    readonly
+                    @keydown="handleKeydown($event, rIndex, cIndex)"
+                    @input="handleInput($event, rIndex, cIndex)"
+                    autocomplete="off"
                     class="value-input"
                     :class="{ 
                         'hidden': cell === null,
@@ -465,12 +473,15 @@ onMounted(() => {
 }
 
 .value-input.hidden {
-    opacity: 0;
+    color: transparent; /* Keep background visible but hide text (which is null anyway) */
     cursor: text;
 }
 
-.value-input:focus {
-    background-color: rgba(66, 185, 131, 0.1);
+/* Highlight the active cell */
+.cell:focus-within {
+    background-color: rgba(143, 242, 245, 0.8) !important;
+    z-index: 25;
+    outline: 2px solid #42b983;
 }
 
 /* Incorrect Mark Styling */

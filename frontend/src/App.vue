@@ -4,7 +4,6 @@ import SudokuBoard from './components/SudokuBoard.vue'
 
 <template>
   <div class="container">
-    <h1>Sudoku</h1>
     <SudokuBoard />
   </div>
 </template>
