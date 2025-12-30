@@ -27,13 +27,16 @@ func main() {
 	})
 
 	// Static File Serving
-	// We assume the frontend will be built to ../frontend/dist
-	frontendDir := "../frontend/dist"
+	// Check for "dist" (production) first, then fallback to "../frontend/dist" (local dev)
+	frontendDir := "dist"
 	if _, err := os.Stat(frontendDir); os.IsNotExist(err) {
-		// Fallback for dev or if not built yet, just to avoid panic
-		log.Printf("Warning: %s does not exist. Frontend will not be served.", frontendDir)
+		frontendDir = "../frontend/dist"
+		if _, err := os.Stat(frontendDir); os.IsNotExist(err) {
+			log.Printf("Warning: Frontend directory not found. Checked 'dist' and '../frontend/dist'.")
+		}
 	}
 
+	log.Printf("Serving frontend from: %s", frontendDir)
 	fs := http.FileServer(http.Dir(frontendDir))
 	mux.Handle("/", fs)
 
