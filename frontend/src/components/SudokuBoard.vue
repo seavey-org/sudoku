@@ -1,14 +1,42 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
 
+const props = defineProps<{
+    initialDifficulty: string,
+    size: number,
+    initialPuzzle?: Record<string, any>,
+    isCustomMode?: boolean
+}>()
+
+const emit = defineEmits(['back-to-menu'])
+
 // Use null for empty cells instead of 0
-const board = ref<(number | null)[][]>(Array.from({ length: 9 }, () => Array(9).fill(null)))
-const isFixed = ref<boolean[][]>(Array.from({ length: 9 }, () => Array(9).fill(false)))
+const board = ref<(number | null)[][]>([])
+const isFixed = ref<boolean[][]>([])
 const solution = ref<number[][]>([])
-const candidates = ref<number[][][]>(Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => [])))
-// Track candidates that have been explicitly removed (manually or via auto-eliminate)
-// We need to serialize Sets to Arrays for storage
-const eliminatedCandidates = ref<Set<number>[][]>(Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => new Set())))
+const initialBoardState = ref<number[][]>([]) // To store the clean initial state for sharing
+
+const candidates = ref<number[][][]>([])
+// Track candidates that have been explicitly removed
+const eliminatedCandidates = ref<Set<number>[][]>([])
+
+const loading = ref(false)
+const message = ref('')
+const isNoteMode = ref(false)
+const difficulty = ref(props.initialDifficulty)
+const isDefiningCustom = ref(false) // State for entering custom puzzle
+
+const STORAGE_KEY = `sudoku_game_state_${props.size}`
+
+// Initialize arrays based on size
+const initArrays = () => {
+    const s = props.size
+    board.value = Array.from({ length: s }, () => Array(s).fill(null))
+    isFixed.value = Array.from({ length: s }, () => Array(s).fill(false))
+    solution.value = []
+    candidates.value = Array.from({ length: s }, () => Array.from({ length: s }, () => [] as number[]))
+    eliminatedCandidates.value = Array.from({ length: s }, () => Array.from({ length: s }, () => new Set<number>()))
+}
 
 // History Stack for Undo
 interface GameState {
@@ -17,13 +45,6 @@ interface GameState {
     eliminatedCandidates: Set<number>[][];
 }
 const history = ref<GameState[]>([])
-
-const loading = ref(false)
-const message = ref('')
-const isNoteMode = ref(false)
-const difficulty = ref('easy')
-
-const STORAGE_KEY = 'sudoku_game_state'
 
 // Deep copy helper
 const cloneState = (): GameState => {
@@ -67,25 +88,46 @@ const saveGame = () => {
         board: board.value,
         isFixed: isFixed.value,
         solution: solution.value,
+        initialBoardState: initialBoardState.value, // Save for sharing later
         candidates: candidates.value,
         // Convert Sets to Arrays for JSON serialization
         eliminatedCandidates: eliminatedCandidates.value.map(row => 
             row.map(set => Array.from(set))
         ),
         difficulty: difficulty.value,
-        history: serializeHistory(history.value)
+        history: serializeHistory(history.value),
+        size: props.size,
+        isCustomMode: props.isCustomMode,
+        isDefiningCustom: isDefiningCustom.value
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(gameState))
 }
 
 const loadGame = (): boolean => {
+    // If we have an imported puzzle, use it strictly
+    if (props.initialPuzzle) {
+        loadImportedPuzzle(props.initialPuzzle)
+        return true
+    }
+
+    // If newly entering custom mode (and not loading a save), we skip loading
+    // But we need to check if there is a save first to allow refresh in custom mode.
+    // If props.isCustomMode is true, we should check if the saved game is also custom.
+
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) {
         try {
             const gameState = JSON.parse(saved)
+            if (gameState.size !== props.size) return false // Mismatch size
+            
+            // Check if saved game mode matches current intention
+            if (props.isCustomMode && !gameState.isCustomMode) return false // Wanted custom, found normal
+            if (!props.isCustomMode && gameState.isCustomMode) return false // Wanted normal, found custom
+
             board.value = gameState.board
             isFixed.value = gameState.isFixed
             solution.value = gameState.solution
+            initialBoardState.value = gameState.initialBoardState || []
             candidates.value = gameState.candidates
             // Convert Arrays back to Sets
             eliminatedCandidates.value = gameState.eliminatedCandidates.map((row: number[][]) => 
@@ -103,6 +145,9 @@ const loadGame = (): boolean => {
                     )
                  }))
             }
+            if (gameState.isDefiningCustom !== undefined) {
+                isDefiningCustom.value = gameState.isDefiningCustom
+            }
             return true
         } catch (e) {
             console.error("Failed to load game state", e)
@@ -112,17 +157,109 @@ const loadGame = (): boolean => {
     return false
 }
 
+const loadImportedPuzzle = (data: any) => {
+    // Setup from import
+    board.value = data.board.map((row: number[]) => row.map(val => val === 0 ? null : val))
+    isFixed.value = data.board.map((row: number[]) => row.map(val => val !== 0))
+    solution.value = data.solution
+    initialBoardState.value = data.board // Keep original for re-sharing
+    difficulty.value = data.difficulty
+    
+    // Clear history/storage for this "new" game
+    resetCandidates()
+    history.value = []
+    saveGame()
+    message.value = 'Puzzle imported successfully.'
+}
+
 const startNewGame = () => {
-    localStorage.removeItem(STORAGE_KEY)
-    history.value = [] // Clear history on new game
-    fetchPuzzle()
+    emit('back-to-menu')
+}
+
+const validateAndStartCustom = async () => {
+    loading.value = true
+    message.value = 'Validating puzzle...'
+    
+    // Prepare board for API (0 for null)
+    const boardData = board.value.map(row => row.map(cell => cell === null ? 0 : cell))
+
+    try {
+        const response = await fetch('/api/solve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ board: boardData, size: props.size })
+        })
+
+        if (!response.ok) {
+            const err = await response.text()
+            message.value = `Invalid puzzle: ${err.replace(/\n/g, ' ')}`
+            loading.value = false
+            return
+        }
+
+        const data = await response.json()
+        solution.value = data.solution
+        
+        // Lock currently entered cells
+        isFixed.value = board.value.map(row => row.map(cell => cell !== null))
+        initialBoardState.value = boardData
+        
+        // Start Game
+        isDefiningCustom.value = false
+        message.value = 'Puzzle valid! Game started.'
+        saveGame()
+
+    } catch (e) {
+        console.error(e)
+        message.value = 'Error validating puzzle.'
+    } finally {
+        loading.value = false
+    }
+}
+
+const shareGame = () => {
+    if (!initialBoardState.value || initialBoardState.value.length === 0) {
+        // If sharing in custom definition mode, we construct state from current board
+        if (isDefiningCustom.value) {
+             // Note: Solution might not exist yet, so import will need to solve it or we block sharing until solved?
+             // Ideally block until solved to ensure validity.
+             message.value = "Please solve/validate the puzzle before sharing."
+             return
+        }
+        message.value = "Cannot share this puzzle."
+        return
+    }
+    
+    const data = {
+        board: initialBoardState.value,
+        solution: solution.value,
+        size: props.size,
+        difficulty: difficulty.value
+    }
+    
+    const json = JSON.stringify(data)
+    const base64 = btoa(json)
+    const url = `${window.location.origin}/?import=${base64}`
+    
+    navigator.clipboard.writeText(url).then(() => {
+        message.value = "Link copied to clipboard!"
+        setTimeout(() => message.value = "", 3000)
+    }).catch(err => {
+        console.error('Failed to copy text: ', err)
+        message.value = "Failed to copy link."
+    })
 }
 
 const fetchPuzzle = async () => {
+  if (props.isCustomMode) {
+      isDefiningCustom.value = true
+      return
+  }
+
   loading.value = true
   message.value = ''
   try {
-    const response = await fetch(`/api/puzzle?difficulty=${difficulty.value}`)
+    const response = await fetch(`/api/puzzle?difficulty=${difficulty.value}&size=${props.size}`)
     const data = await response.json()
     // Convert 0s to nulls for the UI
     board.value = data.board.map((row: number[]) => row.map(val => val === 0 ? null : val))
@@ -130,6 +267,8 @@ const fetchPuzzle = async () => {
     isFixed.value = data.board.map((row: number[]) => row.map(val => val !== 0))
     
     solution.value = data.solution
+    initialBoardState.value = data.board // Store raw
+    
     // Reset candidates and elimination history
     resetCandidates()
     history.value = [] // Reset history
@@ -143,8 +282,9 @@ const fetchPuzzle = async () => {
 }
 
 const resetCandidates = () => {
-    candidates.value = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => []))
-    eliminatedCandidates.value = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => new Set()))
+    const s = props.size
+    candidates.value = Array.from({ length: s }, () => Array.from({ length: s }, () => [] as number[]))
+    eliminatedCandidates.value = Array.from({ length: s }, () => Array.from({ length: s }, () => new Set<number>()))
 }
 
 // Watch for changes to save state
@@ -155,8 +295,8 @@ watch([board, candidates, eliminatedCandidates, difficulty], () => {
 const checkSolution = () => {
     if (solution.value.length === 0) return
 
-    for (let i = 0; i < 9; i++) {
-        for (let j = 0; j < 9; j++) {
+    for (let i = 0; i < props.size; i++) {
+        for (let j = 0; j < props.size; j++) {
             const val = board.value[i]![j]
             // Treat null as incorrect/incomplete
             if (val === null || val !== solution.value[i]![j]) {
@@ -190,22 +330,25 @@ const removeCandidates = (r: number, c: number, val: number) => {
         }
     }
 
+    const s = props.size
+    const boxH = s === 6 ? 2 : 3
+    const boxW = 3
+
     // Row
-    for (let j = 0; j < 9; j++) removeFromCell(r, j, val)
+    for (let j = 0; j < s; j++) removeFromCell(r, j, val)
     // Col
-    for (let i = 0; i < 9; i++) removeFromCell(i, c, val)
+    for (let i = 0; i < s; i++) removeFromCell(i, c, val)
     // Box
-    const startRow = Math.floor(r / 3) * 3
-    const startCol = Math.floor(c / 3) * 3
-    for (let i = 0; i < 3; i++) {
-        for (let j = 0; j < 3; j++) {
+    const startRow = Math.floor(r / boxH) * boxH
+    const startCol = Math.floor(c / boxW) * boxW
+    for (let i = 0; i < boxH; i++) {
+        for (let j = 0; j < boxW; j++) {
             removeFromCell(startRow + i, startCol + j, val)
         }
     }
 }
 
 // Interaction Handler
-// We use @keydown for desktop navigation/shortcuts and @input for value entry (mobile friendly)
 const handleKeydown = (e: KeyboardEvent, r: number, c: number) => {
     const key = e.key
     
@@ -216,10 +359,9 @@ const handleKeydown = (e: KeyboardEvent, r: number, c: number) => {
         return
     }
 
-    // Navigation (optional enhancement) and Deletion
+    // Allow navigation and deletion normally
     if (['Backspace', 'Delete', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key)) {
         if (['Backspace', 'Delete'].includes(key)) {
-            e.preventDefault() // Prevent default backspace nav
             if (!isFixed.value[r]![c] && board.value[r]![c] !== null) {
                  saveState() // Save before clearing
                  board.value[r]![c] = null
@@ -227,35 +369,38 @@ const handleKeydown = (e: KeyboardEvent, r: number, c: number) => {
         }
         return
     }
-    
-    // Prevent default for other keys to strictly control input via @input or validation
-    // However, on mobile, preventing default on keydown often stops the soft keyboard from sending input.
-    // So we primarily rely on InputEvent or just validating the key if possible.
-    // For desktop "1-9", we can keep the preventDefault logic if we want, OR just rely on @input.
-    // Let's stick to using @input for the value changes to support mobile keyboards better.
 }
 
 const handleInput = (e: Event, r: number, c: number) => {
     const input = e.target as HTMLInputElement
     const val = input.value
     
-    // Reset input value immediately so Vue state controls it
-    // We'll set the board state which will update the input value via binding
+    // Reset input value immediately
     input.value = board.value[r]![c]?.toString() || ''
 
-    if (!val) return // Empty
+    if (!val) return
 
-    // Get the last character entered (to handle if someone types fast or mobile weirdness)
     const char = val.slice(-1)
+    // Check if 1-N (size)
+    const max = props.size
+    const regex = new RegExp(`^[1-${max}]$`)
 
-    // Check if 1-9
-    if (/^[1-9]$/.test(char)) {
+    if (regex.test(char)) {
         const num = parseInt(char)
         
-        if (isFixed.value[r]![c]) return
+        // In custom definition mode, we don't check isFixed (everything is editable initially)
+        // Once game starts, we check isFixed.
+        if (!isDefiningCustom.value && isFixed.value[r]![c]) return
 
         saveState()
 
+        // Logic for Custom Definition Mode
+        if (isDefiningCustom.value) {
+            board.value[r]![c] = num
+            return
+        }
+
+        // Logic for Normal Play Mode
         if (isNoteMode.value) {
             const currentCandidates = candidates.value[r]![c]!
             const idx = currentCandidates.indexOf(num)
@@ -271,10 +416,12 @@ const handleInput = (e: Event, r: number, c: number) => {
             board.value[r]![c] = num
             candidates.value[r]![c] = []
             
+            // Auto Eliminate Peer Candidates (Always ON)
             if (num === solution.value[r]![c]) {
                 removeCandidates(r, c, num)
             }
 
+            // Auto Check if full
             if (isBoardFull()) {
                 checkSolution()
             }
@@ -285,8 +432,8 @@ const handleInput = (e: Event, r: number, c: number) => {
 // Auto Candidate Logic
 const generateCandidates = () => {
     saveState() // Save before generating
-    for (let r = 0; r < 9; r++) {
-        for (let c = 0; c < 9; c++) {
+    for (let r = 0; r < props.size; r++) {
+        for (let c = 0; c < props.size; c++) {
             if (board.value[r]![c] === null) {
                 const valid = getValidNumbers(r, c)
                 // Filter out candidates that have been explicitly eliminated
@@ -296,42 +443,46 @@ const generateCandidates = () => {
             }
         }
     }
-    message.value = 'Candidates generated (respecting eliminations).'
+    message.value = 'Candidates generated (respecting eliminations.)'
 }
 
 const getValidNumbers = (row: number, col: number): number[] => {
     const used = new Set<number>()
+    const s = props.size
     
     // Check Row
-    for (let c = 0; c < 9; c++) {
+    for (let c = 0; c < s; c++) {
         const val = board.value[row]![c]
         if (val !== null && val !== undefined) used.add(val)
     }
 
     // Check Col
-    for (let r = 0; r < 9; r++) {
+    for (let r = 0; r < s; r++) {
         const val = board.value[r]![col]
         if (val !== null && val !== undefined) used.add(val)
     }
 
     // Check Box
-    const startRow = Math.floor(row / 3) * 3
-    const startCol = Math.floor(col / 3) * 3
-    for (let r = 0; r < 3; r++) {
-        for (let c = 0; c < 3; c++) {
+    const boxH = s === 6 ? 2 : 3
+    const boxW = 3
+    const startRow = Math.floor(row / boxH) * boxH
+    const startCol = Math.floor(col / boxW) * boxW
+    for (let r = 0; r < boxH; r++) {
+        for (let c = 0; c < boxW; c++) {
             const val = board.value[startRow + r]![startCol + c]
             if (val !== null && val !== undefined) used.add(val)
         }
     }
 
     const valid: number[] = []
-    for (let n = 1; n <= 9; n++) {
+    for (let n = 1; n <= s; n++) {
         if (!used.has(n)) valid.push(n)
     }
     return valid
 }
 
 onMounted(() => {
+    initArrays()
     if (!loadGame()) {
         fetchPuzzle()
     }
@@ -343,7 +494,12 @@ onMounted(() => {
     <div v-if="loading" class="loading">Generating Puzzle...</div>
     
     <div v-else class="game-area">
-        <div class="grid">
+        <div class="header-status" v-if="isDefiningCustom">
+            <h3>Enter Your Puzzle</h3>
+            <p>Fill in the initial numbers.</p>
+        </div>
+
+        <div class="grid" :class="`size-${size}`">
         <div v-for="(row, rIndex) in board" :key="rIndex" class="row">
             <div v-for="(cell, cIndex) in row" :key="cIndex" class="cell">
                 <!-- Main Value Input -->
@@ -355,22 +511,22 @@ onMounted(() => {
                     @input="handleInput($event, rIndex, cIndex)"
                     autocomplete="off"
                     class="value-input"
-                    :class="{ 
+                    :class="{
                         'hidden': cell === null,
-                        'fixed': isFixed[rIndex]![cIndex] 
+                        'fixed': isFixed[rIndex]![cIndex] || isDefiningCustom 
                     }"
                 />
                 
                 <!-- Incorrect Mark (Red X) -->
-                <div v-if="!isFixed[rIndex]![cIndex] && cell !== null && cell !== solution[rIndex]![cIndex]" class="incorrect-mark">
+                <div v-if="!isDefiningCustom && !isFixed[rIndex]![cIndex] && cell !== null && cell !== solution[rIndex]![cIndex]" class="incorrect-mark">
                     X
                 </div>
 
                 <!-- Candidates Overlay -->
-                <div v-if="cell === null && candidates[rIndex]![cIndex]!.length > 0" class="candidates-grid">
+                <div v-if="!isDefiningCustom && cell === null && candidates[rIndex]![cIndex]!.length > 0" class="candidates-grid" :class="`size-${size}`">
                     <div 
-                        v-for="num in 9" 
-                        :key="num" 
+                        v-for="num in size"
+                        :key="num"
                         class="candidate-cell"
                     >
                         {{ candidates[rIndex]![cIndex]!.includes(num) ? num : '' }}
@@ -381,18 +537,21 @@ onMounted(() => {
         </div>
 
         <div class="controls-container">
-            <div class="controls">
-                <select v-model="difficulty" class="difficulty-select">
-                    <option value="easy">Easy</option>
-                    <option value="medium">Medium</option>
-                    <option value="hard">Hard</option>
-                </select>
+            <!-- Custom Mode Setup Controls -->
+            <div class="controls" v-if="isDefiningCustom">
+                <button @click="startNewGame">Cancel</button>
+                <button class="primary-action" @click="validateAndStartCustom">Start Solving</button>
+            </div>
+
+            <!-- Normal Game Controls -->
+            <div class="controls" v-else>
                 <button @click="startNewGame">New Game</button>
                 <button @click="undo">Undo</button>
+                <button @click="shareGame">Share</button>
                 <button @click="showSolution" class="secondary">Show Solution</button>
             </div>
             
-            <div class="controls secondary-controls">
+            <div class="controls secondary-controls" v-if="!isDefiningCustom">
                 <button 
                     @click="isNoteMode = !isNoteMode" 
                     :class="{ 'active': isNoteMode }"
@@ -416,15 +575,21 @@ onMounted(() => {
   align-items: center;
 }
 
+.header-status {
+    text-align: center;
+    margin-bottom: 1rem;
+    color: #dad4f6;
+}
+
 .grid {
   display: grid;
-  grid-template-columns: repeat(9, 1fr);
+  grid-template-columns: repeat(v-bind(size), 1fr);
   background-color: #000;
   border: 3px solid #000;
   margin-bottom: 20px;
   gap: 0;
   width: 100%;
-  max-width: 450px; /* Adjust based on desired size */
+  max-width: 450px;
 }
 
 .row {
@@ -439,13 +604,24 @@ onMounted(() => {
   box-sizing: border-box;
 }
 
-/* Thick Vertical Lines */
-.cell:nth-child(3), .cell:nth-child(6) {
+/* Borders for 9x9 */
+.grid.size-9 .cell:nth-child(3), 
+.grid.size-9 .cell:nth-child(6) {
   border-right: 3px solid #000;
 }
+.grid.size-9 .row:nth-child(3) .cell, 
+.grid.size-9 .row:nth-child(6) .cell {
+  border-bottom: 3px solid #000;
+}
 
-/* Thick Horizontal Lines */
-.row:nth-child(3) .cell, .row:nth-child(6) .cell {
+/* Borders for 6x6 (2x3 blocks: 2 rows, 3 cols) */
+/* Thick Right border after 3rd column */
+.grid.size-6 .cell:nth-child(3) {
+  border-right: 3px solid #000;
+}
+/* Thick Bottom border after 2nd and 4th row */
+.grid.size-6 .row:nth-child(2) .cell,
+.grid.size-6 .row:nth-child(4) .cell {
   border-bottom: 3px solid #000;
 }
 
@@ -467,21 +643,21 @@ onMounted(() => {
   cursor: default;
 }
 
+.value-input.hidden {
+    color: transparent;
+    cursor: text;
+}
+
 .value-input.fixed {
     color: #000;
     font-weight: bold;
 }
 
-.value-input.hidden {
-    color: transparent; /* Keep background visible but hide text (which is null anyway) */
-    cursor: text;
-}
-
 /* Highlight the active cell */
 .cell:focus-within {
-    background-color: rgba(143, 242, 245, 0.8) !important;
+    background-color: rgba(187, 222, 251, 0.95) !important;
     z-index: 25;
-    outline: 2px solid #42b983;
+    outline: 2px solid #007bff;
 }
 
 /* Incorrect Mark Styling */
@@ -497,8 +673,8 @@ onMounted(() => {
     color: red;
     font-weight: bold;
     font-size: 1.5rem;
-    pointer-events: none; /* Allows clicks to pass through to input */
-    z-index: 20; /* Above input */
+    pointer-events: none;
+    z-index: 20;
     opacity: 0.8;
 }
 
@@ -510,10 +686,18 @@ onMounted(() => {
     width: 100%;
     height: 100%;
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    grid-template-rows: repeat(3, 1fr);
     pointer-events: none;
     z-index: 5;
+}
+
+.candidates-grid.size-9 {
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+}
+
+.candidates-grid.size-6 {
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(2, 1fr);
 }
 
 .candidate-cell {
@@ -536,6 +720,7 @@ onMounted(() => {
     display: flex;
     gap: 10px;
     justify-content: center;
+    flex-wrap: wrap; /* Handle smaller screens */
 }
 
 button {
@@ -551,6 +736,14 @@ button {
 
 button:hover {
     background-color: #3aa876;
+}
+
+button.primary-action {
+    background-color: #34495e;
+    font-weight: bold;
+}
+button.primary-action:hover {
+    background-color: #2c3e50;
 }
 
 select.difficulty-select {

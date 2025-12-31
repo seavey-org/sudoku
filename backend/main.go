@@ -21,9 +21,46 @@ func main() {
 		}
 
 		difficulty := r.URL.Query().Get("difficulty")
-		puzzle := sudoku.Generate(difficulty)
+		sizeParam := r.URL.Query().Get("size")
+		size := 9
+		if sizeParam == "6" {
+			size = 6
+		}
+
+		puzzle := sudoku.Generate(difficulty, size)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(puzzle)
+	})
+
+	// API Endpoint: Solve
+	mux.HandleFunc("/api/solve", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			Board [][]int `json:"board"`
+			Size  int     `json:"size"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		solution, solvable := sudoku.Solve(req.Board, req.Size)
+		if !solvable {
+			http.Error(w, "Unsolvable puzzle", http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Solution [][]int `json:"solution"`
+		}{
+			Solution: solution,
+		})
 	})
 
 	// Static File Serving

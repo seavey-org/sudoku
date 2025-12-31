@@ -5,43 +5,114 @@ import (
 	"time"
 )
 
-const N = 9
-const SRN = 3 // Square Root of N
-
-type Grid [N][N]int
+type Grid [][]int
 
 type Puzzle struct {
 	Solution Grid `json:"solution"`
 	Board    Grid `json:"board"`
 }
 
+type Generator struct {
+	N         int
+	BoxHeight int
+	BoxWidth  int
+}
+
 func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
-// Generate creates a new valid Sudoku puzzle with a unique solution
-func Generate(difficulty string) Puzzle {
-	var g Grid
-	g.fillDiagonal()
-	g.fillRemaining(0, SRN)
-
-	solution := g // Store the full solution
-
-	// Determine number of holes based on difficulty
-	var k int
-	switch difficulty {
-	case "easy":
-		k = 40
-	case "hard":
-		k = 64
-	case "medium":
-		fallthrough
-	default:
-		k = 50
+// Solve attempts to solve a given partial grid
+func Solve(initialBoard Grid, size int) (Grid, bool) {
+	gen := Generator{N: size}
+	
+	if size == 6 {
+		gen.BoxHeight = 2
+		gen.BoxWidth = 3
+	} else {
+		gen.N = 9
+		gen.BoxHeight = 3
+		gen.BoxWidth = 3
 	}
 
-	puzzleBoard := g
-	puzzleBoard.removeDigits(k)
+	// 1. Validate initial board state
+	for i := 0; i < gen.N; i++ {
+		for j := 0; j < gen.N; j++ {
+			num := initialBoard[i][j]
+			if num != 0 {
+				// Temporarily clear cell to check if it's safe in its position
+				initialBoard[i][j] = 0
+				if !gen.isSafe(initialBoard, i, j, num) {
+					return nil, false // Invalid initial state
+				}
+				initialBoard[i][j] = num
+			}
+		}
+	}
+
+	// 2. Deep copy to work on
+	solution := make(Grid, gen.N)
+	for i := range initialBoard {
+		solution[i] = make([]int, gen.N)
+		copy(solution[i], initialBoard[i])
+	}
+
+	// 3. Solve
+	if gen.fillGrid(solution) {
+		return solution, true
+	}
+
+	return nil, false
+}
+
+// Generate creates a new valid Sudoku puzzle
+func Generate(difficulty string, size int) Puzzle {
+	gen := Generator{N: size}
+	
+	// Configure dimensions
+	if size == 6 {
+		gen.BoxHeight = 2
+		gen.BoxWidth = 3
+	} else {
+		// Default to 9x9
+		gen.N = 9
+		gen.BoxHeight = 3
+		gen.BoxWidth = 3
+	}
+
+	var g Grid
+	// Retry generation until a valid solution is found
+	// (Should be first try with standard solver, but kept for robustness)
+	for {
+		g = make(Grid, gen.N)
+		for i := range g {
+			g[i] = make([]int, gen.N)
+		}
+
+		// Fill the grid using random backtracking
+		// We shuffle the numbers 1..N at each step to ensure randomness
+		if gen.fillGrid(g) {
+			break
+		}
+	}
+
+	// Deep copy for solution
+	solution := make(Grid, gen.N)
+	for i := range g {
+		solution[i] = make([]int, gen.N)
+		copy(solution[i], g[i])
+	}
+
+	// Determine holes
+	k := gen.getHolesCount(difficulty)
+	
+	puzzleBoard := make(Grid, gen.N)
+	for i := range g {
+		puzzleBoard[i] = make([]int, gen.N)
+		copy(puzzleBoard[i], g[i])
+	}
+	
+	gen.removeDigits(puzzleBoard, k)
 
 	return Puzzle{
 		Solution: solution,
@@ -49,31 +120,44 @@ func Generate(difficulty string) Puzzle {
 	}
 }
 
-func (g *Grid) fillDiagonal() {
-	for i := 0; i < N; i = i + SRN {
-		g.fillBox(i, i)
-	}
-}
-
-func (g *Grid) fillBox(row, col int) {
-	num := 0
-	for i := 0; i < SRN; i++ {
-		for j := 0; j < SRN; j++ {
-			for {
-				num = rand.Intn(N) + 1
-				if g.isSafeBox(row, col, num) {
-					break
-				}
-			}
-			g[row+i][col+j] = num
+func (gen *Generator) getHolesCount(difficulty string) int {
+	if gen.N == 6 {
+		switch difficulty {
+		case "easy":
+			return 15
+		case "hard":
+			return 25
+		default: // medium
+			return 20
 		}
 	}
+	// 9x9
+	switch difficulty {
+	case "easy":
+		return 40
+	case "hard":
+		return 64
+	default: // medium
+		return 50
+	}
 }
 
-func (g *Grid) isSafeBox(rowStart, colStart, num int) bool {
-	for i := 0; i < SRN; i++ {
-		for j := 0; j < SRN; j++ {
-			if g[rowStart+i][colStart+j] == num {
+// fillGrid fills the entire grid using backtracking with randomized candidates
+func (gen *Generator) fillGrid(g Grid) bool {
+	for i := 0; i < gen.N; i++ {
+		for j := 0; j < gen.N; j++ {
+			if g[i][j] == 0 {
+				nums := rand.Perm(gen.N)
+				for _, n := range nums {
+					num := n + 1 // Perm returns 0..N-1
+					if gen.isSafe(g, i, j, num) {
+						g[i][j] = num
+						if gen.fillGrid(g) {
+							return true
+						}
+						g[i][j] = 0
+					}
+				}
 				return false
 			}
 		}
@@ -81,14 +165,14 @@ func (g *Grid) isSafeBox(rowStart, colStart, num int) bool {
 	return true
 }
 
-func (g *Grid) isSafe(row, col, num int) bool {
-	return g.unUsedInRow(row, num) &&
-		g.unUsedInCol(col, num) &&
-		g.unUsedInBox(row-row%SRN, col-col%SRN, num)
+func (gen *Generator) isSafe(g Grid, row, col, num int) bool {
+	return gen.unUsedInRow(g, row, num) &&
+		gen.unUsedInCol(g, col, num) &&
+		gen.unUsedInBox(g, row-row%gen.BoxHeight, col-col%gen.BoxWidth, num)
 }
 
-func (g *Grid) unUsedInRow(row, num int) bool {
-	for j := 0; j < N; j++ {
+func (gen *Generator) unUsedInRow(g Grid, row, num int) bool {
+	for j := 0; j < gen.N; j++ {
 		if g[row][j] == num {
 			return false
 		}
@@ -96,8 +180,8 @@ func (g *Grid) unUsedInRow(row, num int) bool {
 	return true
 }
 
-func (g *Grid) unUsedInCol(col, num int) bool {
-	for i := 0; i < N; i++ {
+func (gen *Generator) unUsedInCol(g Grid, col, num int) bool {
+	for i := 0; i < gen.N; i++ {
 		if g[i][col] == num {
 			return false
 		}
@@ -105,9 +189,9 @@ func (g *Grid) unUsedInCol(col, num int) bool {
 	return true
 }
 
-func (g *Grid) unUsedInBox(rowStart, colStart, num int) bool {
-	for i := 0; i < SRN; i++ {
-		for j := 0; j < SRN; j++ {
+func (gen *Generator) unUsedInBox(g Grid, rowStart, colStart, num int) bool {
+	for i := 0; i < gen.BoxHeight; i++ {
+		for j := 0; j < gen.BoxWidth; j++ {
 			if g[rowStart+i][colStart+j] == num {
 				return false
 			}
@@ -116,56 +200,15 @@ func (g *Grid) unUsedInBox(rowStart, colStart, num int) bool {
 	return true
 }
 
-func (g *Grid) fillRemaining(i, j int) bool {
-	if j >= N && i < N-1 {
-		i = i + 1
-		j = 0
-	}
-	if i >= N && j >= N {
-		return true
-	}
-	if i < SRN {
-		if j < SRN {
-			j = SRN
-		}
-	} else if i < N-SRN {
-		if j == (i/SRN)*SRN {
-			j = j + SRN
-		}
-	} else {
-		if j == N-SRN {
-			i = i + 1
-			j = 0
-			if i >= N {
-				return true
-			}
-		}
-	}
-
-	for num := 1; num <= N; num++ {
-		if g.isSafe(i, j, num) {
-			g[i][j] = num
-			if g.fillRemaining(i, j+1) {
-				return true
-			}
-			g[i][j] = 0
-		}
-	}
-	return false
-}
-
-// removeDigits tries to remove K digits while maintaining a unique solution.
-func (g *Grid) removeDigits(k int) {
-	// Create a list of all cell positions
+func (gen *Generator) removeDigits(g Grid, k int) {
 	type point struct{ r, c int }
-	cells := make([]point, 0, N*N)
-	for i := 0; i < N; i++ {
-		for j := 0; j < N; j++ {
+	cells := make([]point, 0, gen.N*gen.N)
+	for i := 0; i < gen.N; i++ {
+		for j := 0; j < gen.N; j++ {
 			cells = append(cells, point{i, j})
 		}
 	}
 
-	// Shuffle the list
 	rand.Shuffle(len(cells), func(i, j int) {
 		cells[i], cells[j] = cells[j], cells[i]
 	})
@@ -181,12 +224,11 @@ func (g *Grid) removeDigits(k int) {
 			backup := g[i][j]
 			g[i][j] = 0
 
-			// Check if solution is unique
 			solutions := 0
-			g.solveCount(&solutions)
+			gen.solveCount(g, &solutions)
 
 			if solutions != 1 {
-				g[i][j] = backup // Put it back if not unique
+				g[i][j] = backup
 			} else {
 				count--
 			}
@@ -194,14 +236,14 @@ func (g *Grid) removeDigits(k int) {
 	}
 }
 
-func (g *Grid) solveCount(count *int) {
-	for i := 0; i < N; i++ {
-		for j := 0; j < N; j++ {
+func (gen *Generator) solveCount(g Grid, count *int) {
+	for i := 0; i < gen.N; i++ {
+		for j := 0; j < gen.N; j++ {
 			if g[i][j] == 0 {
-				for num := 1; num <= N; num++ {
-					if g.isSafe(i, j, num) {
+				for num := 1; num <= gen.N; num++ {
+					if gen.isSafe(g, i, j, num) {
 						g[i][j] = num
-						g.solveCount(count)
+						gen.solveCount(g, count)
 						g[i][j] = 0
 						if *count > 1 {
 							return
