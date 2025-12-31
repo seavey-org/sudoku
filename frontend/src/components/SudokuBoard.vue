@@ -872,4 +872,11 @@ button.active {
     font-size: 1.1rem;
     color: #dad4f6;
 }
+
+.game-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+}
 </style>
