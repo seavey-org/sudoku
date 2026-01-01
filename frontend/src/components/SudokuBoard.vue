@@ -368,7 +368,7 @@ const checkSolution = () => {
     for (let r = 0; r < props.size; r++) {
         const rowVals = new Set<number>()
         for (let c = 0; c < props.size; c++) {
-            const val = board.value[r]![c]!
+            const val = board.value[r][c]!
             if (rowVals.has(val)) {
                 message.value = `Duplicate number ${val} in Row ${r + 1}`
                 return
@@ -381,7 +381,7 @@ const checkSolution = () => {
     for (let c = 0; c < props.size; c++) {
         const colVals = new Set<number>()
         for (let r = 0; r < props.size; r++) {
-            const val = board.value[r]![c]!
+            const val = board.value[r][c]!
             if (colVals.has(val)) {
                 message.value = `Duplicate number ${val} in Column ${c + 1}`
                 return
@@ -398,7 +398,7 @@ const checkSolution = () => {
              const boxVals = new Set<number>()
              for (let i = 0; i < boxH; i++) {
                  for (let j = 0; j < boxW; j++) {
-                     const val = board.value[br + i]![bc + j]!
+                     const val = board.value[br + i][bc + j]!
                      if (boxVals.has(val)) {
                          message.value = `Duplicate number ${val} in Box`
                          return
@@ -415,7 +415,7 @@ const checkSolution = () => {
             let currentSum = 0
             const cageVals = new Set<number>()
             for (const cell of cage.cells) {
-                const val = board.value[cell.row]![cell.col]!
+                const val = board.value[cell.row][cell.col]!
                 if (cageVals.has(val)) {
                     message.value = `Duplicate number ${val} in a cage.`
                     return
@@ -863,9 +863,6 @@ onUnmounted(() => {
     z-index: 15;
     pointer-events: none;
     line-height: 1;
-    background-color: white;
-    padding: 0 2px;
-    border-radius: 2px;
 }
 
 /* Input Styling */
@@ -946,16 +943,13 @@ onUnmounted(() => {
 
 .candidates-grid.killer-mode {
     padding-top: 15px;
-    padding-left: 5px;
-    padding-right: 5px;
-    padding-bottom: 5px;
 }
 
 .candidate-cell {
     display: flex;
     justify-content: center;
     align-items: center;
-    font-size: 8px;
+    font-size: 10px;
     color: #555;
     line-height: 1;
 }
