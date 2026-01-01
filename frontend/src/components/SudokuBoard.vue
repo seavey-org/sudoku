@@ -5,7 +5,8 @@ const props = defineProps<{
     initialDifficulty: string,
     size: number,
     initialPuzzle?: Record<string, any>,
-    isCustomMode?: boolean
+    isCustomMode?: boolean,
+    gameType?: string
 }>()
 
 const emit = defineEmits(['back-to-menu'])
@@ -15,6 +16,7 @@ const board = ref<(number | null)[][]>([])
 const isFixed = ref<boolean[][]>([])
 const solution = ref<number[][]>([])
 const initialBoardState = ref<number[][]>([]) // To store the clean initial state for sharing
+const cages = ref<{ sum: number, cells: { row: number, col: number }[] }[]>([])
 
 const candidates = ref<number[][][]>([])
 // Track candidates that have been explicitly removed
@@ -126,6 +128,7 @@ const saveGame = () => {
         isFixed: isFixed.value,
         solution: solution.value,
         initialBoardState: initialBoardState.value, // Save for sharing later
+        cages: cages.value,
         candidates: candidates.value,
         // Convert Sets to Arrays for JSON serialization
         eliminatedCandidates: eliminatedCandidates.value.map(row => 
@@ -136,7 +139,8 @@ const saveGame = () => {
         size: props.size,
         isCustomMode: props.isCustomMode,
         isDefiningCustom: isDefiningCustom.value,
-        timer: timer.value
+        timer: timer.value,
+        gameType: props.gameType
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(gameState))
 }
@@ -162,10 +166,17 @@ const loadGame = (): boolean => {
             if (props.isCustomMode && !gameState.isCustomMode) return false // Wanted custom, found normal
             if (!props.isCustomMode && gameState.isCustomMode) return false // Wanted normal, found custom
 
+            // Check game type mismatch
+            // Handle legacy saves where gameType is undefined (treat as 'standard')
+            const savedType = gameState.gameType || 'standard'
+            const currentType = props.gameType || 'standard'
+            if (savedType !== currentType) return false
+
             board.value = gameState.board
             isFixed.value = gameState.isFixed
             solution.value = gameState.solution
             initialBoardState.value = gameState.initialBoardState || []
+            cages.value = gameState.cages || []
             candidates.value = gameState.candidates
             // Convert Arrays back to Sets
             eliminatedCandidates.value = gameState.eliminatedCandidates.map((row: number[][]) => 
@@ -305,7 +316,11 @@ const fetchPuzzle = async () => {
   loading.value = true
   message.value = ''
   try {
-    const response = await fetch(`/api/puzzle?difficulty=${difficulty.value}&size=${props.size}`)
+    let url = `/api/puzzle?difficulty=${difficulty.value}&size=${props.size}`
+    if (props.gameType) {
+        url += `&gameType=${props.gameType}`
+    }
+    const response = await fetch(url)
     const data = await response.json()
     // Convert 0s to nulls for the UI
     board.value = data.board.map((row: number[]) => row.map(val => val === 0 ? null : val))
@@ -314,6 +329,7 @@ const fetchPuzzle = async () => {
     
     solution.value = data.solution
     initialBoardState.value = data.board // Store raw
+    cages.value = data.cages || []
     
     // Reset candidates and elimination history
     resetCandidates()
@@ -341,18 +357,80 @@ watch([board, candidates, eliminatedCandidates, difficulty], () => {
 }, { deep: true })
 
 const checkSolution = () => {
-    if (solution.value.length === 0) return
+    // 1. Basic Completeness Check
+    if (!isBoardFull()) {
+        message.value = 'Incomplete! Fill all cells.'
+        return
+    }
 
-    for (let i = 0; i < props.size; i++) {
-        for (let j = 0; j < props.size; j++) {
-            const val = board.value[i]![j]
-            // Treat null as incorrect/incomplete
-            if (val === null || val !== solution.value[i]![j]) {
-                message.value = 'Incorrect or incomplete! Keep trying.'
+    // 2. Validate Rules (Rows, Cols, Boxes)
+    // Rows
+    for (let r = 0; r < props.size; r++) {
+        const rowVals = new Set<number>()
+        for (let c = 0; c < props.size; c++) {
+            const val = board.value[r]![c]!
+            if (rowVals.has(val)) {
+                message.value = `Duplicate number ${val} in Row ${r + 1}`
+                return
+            }
+            rowVals.add(val)
+        }
+    }
+
+    // Cols
+    for (let c = 0; c < props.size; c++) {
+        const colVals = new Set<number>()
+        for (let r = 0; r < props.size; r++) {
+            const val = board.value[r]![c]!
+            if (colVals.has(val)) {
+                message.value = `Duplicate number ${val} in Column ${c + 1}`
+                return
+            }
+            colVals.add(val)
+        }
+    }
+
+    // Boxes
+    const boxH = props.size === 6 ? 2 : 3
+    const boxW = 3
+    for (let br = 0; br < props.size; br += boxH) {
+        for (let bc = 0; bc < props.size; bc += boxW) {
+             const boxVals = new Set<number>()
+             for (let i = 0; i < boxH; i++) {
+                 for (let j = 0; j < boxW; j++) {
+                     const val = board.value[br + i]![bc + j]!
+                     if (boxVals.has(val)) {
+                         message.value = `Duplicate number ${val} in Box`
+                         return
+                     }
+                     boxVals.add(val)
+                 }
+             }
+        }
+    }
+
+    // 3. Killer Rules (if applicable)
+    if (props.gameType === 'killer') {
+        for (const cage of cages.value) {
+            let currentSum = 0
+            const cageVals = new Set<number>()
+            for (const cell of cage.cells) {
+                const val = board.value[cell.row]![cell.col]!
+                if (cageVals.has(val)) {
+                    message.value = `Duplicate number ${val} in a cage.`
+                    return
+                }
+                cageVals.add(val)
+                currentSum += val
+            }
+            if (currentSum !== cage.sum) {
+                message.value = `Cage sum mismatch. Expected ${cage.sum}, got ${currentSum}.`
                 return
             }
         }
     }
+
+    // If we passed all checks
     message.value = 'Correct! Well done.'
     stopTimer()
 }
@@ -426,7 +504,7 @@ const handleInput = (e: Event, r: number, c: number) => {
     const val = input.value
     
     // Reset input value immediately
-    input.value = board.value[r]![c]?.toString() || ''
+    input.value = board.value[r]?.[c]?.toString() || ''
 
     if (!val) return
 
@@ -440,19 +518,20 @@ const handleInput = (e: Event, r: number, c: number) => {
         
         // In custom definition mode, we don't check isFixed (everything is editable initially)
         // Once game starts, we check isFixed.
-        if (!isDefiningCustom.value && isFixed.value[r]![c]) return
+        if (!isDefiningCustom.value && isFixed.value[r]?.[c]) return
 
         saveState()
 
         // Logic for Custom Definition Mode
         if (isDefiningCustom.value) {
-            board.value[r]![c] = num
+            if (board.value[r]) board.value[r]![c] = num
             return
         }
 
         // Logic for Normal Play Mode
         if (isNoteMode.value) {
-            const currentCandidates = candidates.value[r]![c]!
+            const currentCandidates = candidates.value[r]?.[c]
+            if (!currentCandidates) return
             const idx = currentCandidates.indexOf(num)
             if (idx > -1) {
                 currentCandidates.splice(idx, 1)
@@ -463,11 +542,11 @@ const handleInput = (e: Event, r: number, c: number) => {
                 eliminatedCandidates.value[r]![c]!.delete(num)
             }
         } else {
-            board.value[r]![c] = num
-            candidates.value[r]![c] = []
+            if (board.value[r]) board.value[r]![c] = num
+            if (candidates.value[r]) candidates.value[r]![c] = []
             
             // Auto Eliminate Peer Candidates (Always ON)
-            if (num === solution.value[r]![c]) {
+            if (num !== undefined && num === solution.value[r]![c]) {
                 removeCandidates(r, c, num)
             }
 
@@ -502,14 +581,14 @@ const getValidNumbers = (row: number, col: number): number[] => {
     
     // Check Row
     for (let c = 0; c < s; c++) {
-        const val = board.value[row]![c]
-        if (val !== null && val !== undefined) used.add(val)
+        const val = board.value[row]?.[c]
+        if (typeof val === 'number') used.add(val)
     }
 
     // Check Col
     for (let r = 0; r < s; r++) {
-        const val = board.value[r]![col]
-        if (val !== null && val !== undefined) used.add(val)
+        const val = board.value[r]?.[col]
+        if (typeof val === 'number') used.add(val)
     }
 
     // Check Box
@@ -519,8 +598,8 @@ const getValidNumbers = (row: number, col: number): number[] => {
     const startCol = Math.floor(col / boxW) * boxW
     for (let r = 0; r < boxH; r++) {
         for (let c = 0; c < boxW; c++) {
-            const val = board.value[startRow + r]![startCol + c]
-            if (val !== null && val !== undefined) used.add(val)
+            const val = board.value[startRow + r]?.[startCol + c]
+            if (typeof val === 'number') used.add(val)
         }
     }
 
@@ -529,6 +608,43 @@ const getValidNumbers = (row: number, col: number): number[] => {
         if (!used.has(n)) valid.push(n)
     }
     return valid
+}
+
+const getCageStyle = (r: number, c: number) => {
+    if (!props.gameType || props.gameType !== 'killer') return {}
+
+    // Find the cage this cell belongs to
+    const cage = cages.value.find(cg => cg.cells.some(cell => cell.row === r && cell.col === c))
+    if (!cage) return {}
+
+    const isSameCage = (nr: number, nc: number) => {
+         return cage.cells.some(cell => cell.row === nr && cell.col === nc)
+    }
+
+    return {
+        'cage-border-top': !isSameCage(r - 1, c),
+        'cage-border-bottom': !isSameCage(r + 1, c),
+        'cage-border-left': !isSameCage(r, c - 1),
+        'cage-border-right': !isSameCage(r, c + 1)
+    }
+}
+
+const getCageSum = (r: number, c: number) => {
+    if (!props.gameType || props.gameType !== 'killer') return null
+    const cage = cages.value.find(cg => cg.cells.some(cell => cell.row === r && cell.col === c))
+    if (!cage) return null
+
+    // Display sum only in the top-left-most cell of the cage
+    // Sort cells by row then col to find "first" cell
+    const sorted = [...cage.cells].sort((a, b) => {
+        if (a.row !== b.row) return a.row - b.row
+        return a.col - b.col
+    })
+
+    if (sorted.length > 0 && sorted[0] && sorted[0].row === r && sorted[0].col === c) {
+        return cage.sum
+    }
+    return null
 }
 
 onMounted(() => {
@@ -568,7 +684,8 @@ onUnmounted(() => {
                 <button class="primary-action" @click="resumeTimer">Resume</button>
             </div>
         <div v-for="(row, rIndex) in board" :key="rIndex" class="row">
-            <div v-for="(cell, cIndex) in row" :key="cIndex" class="cell">
+            <div v-for="(cell, cIndex) in row" :key="cIndex" class="cell" :class="getCageStyle(rIndex, cIndex)">
+                <div v-if="getCageSum(rIndex, cIndex)" class="cage-sum">{{ getCageSum(rIndex, cIndex) }}</div>
                 <!-- Main Value Input -->
                 <input 
                     type="text"
@@ -590,7 +707,7 @@ onUnmounted(() => {
                 </div>
 
                 <!-- Candidates Overlay -->
-                <div v-if="!isDefiningCustom && cell === null && candidates[rIndex]![cIndex]!.length > 0" class="candidates-grid" :class="`size-${size}`">
+                <div v-if="!isDefiningCustom && cell === null && candidates[rIndex]![cIndex]!.length > 0" class="candidates-grid" :class="[`size-${size}`, { 'killer-mode': gameType === 'killer' }]">
                     <div 
                         v-for="num in size"
                         :key="num"
@@ -720,6 +837,37 @@ onUnmounted(() => {
   border-bottom: 3px solid #000;
 }
 
+/* Killer Sudoku Cage Styling */
+/* Use pseudo-element for cage borders to avoid conflict with grid lines */
+.cell::after {
+    content: '';
+    position: absolute;
+    top: 4px; left: 4px; right: 4px; bottom: 4px;
+    pointer-events: none;
+    z-index: 10;
+    border: 0px dotted #555;
+}
+
+.cage-border-top::after { border-top-width: 2px; }
+.cage-border-bottom::after { border-bottom-width: 2px; }
+.cage-border-left::after { border-left-width: 2px; }
+.cage-border-right::after { border-right-width: 2px; }
+
+.cage-sum {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    font-size: 0.7rem;
+    font-weight: bold;
+    color: #333;
+    z-index: 15;
+    pointer-events: none;
+    line-height: 1;
+    background-color: white;
+    padding: 0 2px;
+    border-radius: 2px;
+}
+
 /* Input Styling */
 .value-input {
   width: 100%;
@@ -783,6 +931,7 @@ onUnmounted(() => {
     display: grid;
     pointer-events: none;
     z-index: 5;
+    box-sizing: border-box;
 }
 
 .candidates-grid.size-9 {
@@ -795,11 +944,18 @@ onUnmounted(() => {
     grid-template-rows: repeat(2, 1fr);
 }
 
+.candidates-grid.killer-mode {
+    padding-top: 15px;
+    padding-left: 5px;
+    padding-right: 5px;
+    padding-bottom: 5px;
+}
+
 .candidate-cell {
     display: flex;
     justify-content: center;
     align-items: center;
-    font-size: 10px;
+    font-size: 8px;
     color: #555;
     line-height: 1;
 }
