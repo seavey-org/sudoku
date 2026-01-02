@@ -21,7 +21,7 @@ type GeminiContent struct {
 }
 
 type GeminiPart struct {
-	Text       string           `json:"text,omitempty"`
+	Text       string            `json:"text,omitempty"`
 	InlineData *GeminiInlineData `json:"inline_data,omitempty"`
 }
 
@@ -83,8 +83,8 @@ Rules:
 		return nil, err
 	}
 
-	// Use gemini-2.0-flash as 1.5-flash caused 404s
-	url := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + apiKey
+	// Use gemini-3-pro-image model for image understanding
+	url := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=" + apiKey
 	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, err
@@ -107,17 +107,16 @@ Rules:
 
 	text := geminiResp.Candidates[0].Content.Parts[0].Text
 
-    // Clean up markdown code blocks if present
-    text = strings.TrimSpace(text)
-    if strings.HasPrefix(text, "```json") {
-        text = strings.TrimPrefix(text, "```json")
-        text = strings.TrimSuffix(text, "```")
-    } else if strings.HasPrefix(text, "```") {
-        text = strings.TrimPrefix(text, "```")
-        text = strings.TrimSuffix(text, "```")
-    }
-    text = strings.TrimSpace(text)
-
+	// Clean up markdown code blocks if present
+	text = strings.TrimSpace(text)
+	if strings.HasPrefix(text, "```json") {
+		text = strings.TrimPrefix(text, "```json")
+		text = strings.TrimSuffix(text, "```")
+	} else if strings.HasPrefix(text, "```") {
+		text = strings.TrimPrefix(text, "```")
+		text = strings.TrimSuffix(text, "```")
+	}
+	text = strings.TrimSpace(text)
 
 	var result struct {
 		Board [][]int `json:"board"`
@@ -127,9 +126,9 @@ Rules:
 		return nil, fmt.Errorf("failed to parse board json: %v. Text was: %s", err, text)
 	}
 
-    if len(result.Board) != 9 {
-        return nil, fmt.Errorf("invalid board size: %d", len(result.Board))
-    }
+	if len(result.Board) != 9 {
+		return nil, fmt.Errorf("invalid board size: %d", len(result.Board))
+	}
 
 	return result.Board, nil
 }
