@@ -6,11 +6,59 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
+	"sync"
 
 	"github.com/codyseavey/sudoku/backend/sudoku"
 )
 
+type Stats struct {
+	TotalSolved int                                  `json:"totalSolved"`
+	Details     map[string]map[string]map[string]int `json:"details"`
+}
+
+var (
+	stats   Stats
+	statsMu sync.Mutex
+)
+
+const statsFile = "stats.json"
+
+func loadStats() {
+	file, err := os.Open(statsFile)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("Error opening stats file: %v", err)
+		}
+		return
+	}
+	defer file.Close()
+
+	if err := json.NewDecoder(file).Decode(&stats); err != nil {
+		log.Printf("Error decoding stats file: %v", err)
+	}
+}
+
+func saveStats() {
+	file, err := os.Create(statsFile)
+	if err != nil {
+		log.Printf("Error creating stats file: %v", err)
+		return
+	}
+	defer file.Close()
+
+	if err := json.NewEncoder(file).Encode(&stats); err != nil {
+		log.Printf("Error encoding stats file: %v", err)
+	}
+}
+
 func main() {
+	log.Println("Starting Sudoku Server v1.1 (Stats V3)")
+	loadStats()
+	if stats.Details == nil {
+		stats.Details = make(map[string]map[string]map[string]int)
+	}
+
 	mux := http.NewServeMux()
 
 	// API Endpoint
@@ -28,6 +76,12 @@ func main() {
 			size = 6
 		}
 
+		cfIP := r.Header.Get("CF-Connecting-IP")
+		sourceIP := r.RemoteAddr
+		userAgent := r.UserAgent()
+		log.Printf("Generating puzzle: difficulty=%s, size=%d, type=%s, CF-Connecting-IP=%s, SourceIP=%s, UserAgent=%s",
+			difficulty, size, gameType, cfIP, sourceIP, userAgent)
+
 		var puzzle sudoku.Puzzle
 		if gameType == "killer" {
 			puzzle = sudoku.GenerateKiller(difficulty, size)
@@ -37,6 +91,72 @@ func main() {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(puzzle)
+	})
+
+	// API Endpoint: Complete
+	mux.HandleFunc("/api/complete", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			Difficulty string `json:"difficulty"`
+			GameType   string `json:"gameType"`
+			Size       int    `json:"size"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			// Just log error but don't fail hard if we can't parse details, we still want to count it?
+			// Actually, let's just log "Unknown puzzle" if decode fails or proceed.
+			log.Printf("Failed to decode completion request: %v", err)
+		}
+
+		cfIP := r.Header.Get("CF-Connecting-IP")
+		sourceIP := r.RemoteAddr
+		userAgent := r.UserAgent()
+		log.Printf("Puzzle Completed: difficulty=%s, size=%d, type=%s, CF-Connecting-IP=%s, SourceIP=%s, UserAgent=%s",
+			req.Difficulty, req.Size, req.GameType, cfIP, sourceIP, userAgent)
+
+		statsMu.Lock()
+		stats.TotalSolved++
+
+		if stats.Details == nil {
+			stats.Details = make(map[string]map[string]map[string]int)
+		}
+		gType := req.GameType
+		if gType == "" {
+			gType = "standard"
+		}
+		if _, ok := stats.Details[gType]; !ok {
+			stats.Details[gType] = make(map[string]map[string]int)
+		}
+
+		sizeStr := strconv.Itoa(req.Size)
+		if _, ok := stats.Details[gType][sizeStr]; !ok {
+			stats.Details[gType][sizeStr] = make(map[string]int)
+		}
+
+		stats.Details[gType][sizeStr][req.Difficulty]++
+
+		saveStats()
+		statsMu.Unlock()
+
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// API Endpoint: Stats
+	mux.HandleFunc("/api/stats", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		statsMu.Lock()
+		defer statsMu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(stats)
 	})
 
 	// API Endpoint: Solve
