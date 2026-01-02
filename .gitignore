@@ -41,8 +41,10 @@ dist-ssr/
 bin/
 
 # Specific binary names
+sudoku_server
 sudoku-server
 backend/sudoku-server
+backend/sudoku_server
 
 # Test binaries
 *.test
