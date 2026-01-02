@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -54,7 +55,15 @@ func saveStats() {
 }
 
 func main() {
-	log.Println("Starting Sudoku Server v1.1 (Stats V3)")
+	verbose := flag.Bool("verbose", false, "Enable verbose logging")
+	flag.Parse()
+
+	if *verbose {
+		sudoku.VerboseLogging = true
+		log.Println("Verbose logging enabled")
+	}
+
+	log.Println("Starting Sudoku Server...")
 	loadStats()
 	if stats.Details == nil {
 		stats.Details = make(map[string]map[string]map[string]int)
@@ -108,8 +117,6 @@ func main() {
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			// Just log error but don't fail hard if we can't parse details, we still want to count it?
-			// Actually, let's just log "Unknown puzzle" if decode fails or proceed.
 			log.Printf("Failed to decode completion request: %v", err)
 		}
 
@@ -215,7 +222,8 @@ func main() {
 			return
 		}
 
-		board, err := sudoku.ExtractSudokuFromImage(fileBytes)
+		gameType := r.FormValue("gameType")
+		puzzle, err := sudoku.ExtractSudokuFromImage(fileBytes, gameType)
 		if err != nil {
 			log.Printf("Gemini Error: %v", err)
 			http.Error(w, "Failed to process image: "+err.Error(), http.StatusInternalServerError)
@@ -223,11 +231,7 @@ func main() {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(struct {
-			Board [][]int `json:"board"`
-		}{
-			Board: board,
-		})
+		json.NewEncoder(w).Encode(puzzle)
 	})
 
 	// Static File Serving
