@@ -791,9 +791,9 @@ onUnmounted(() => {
                     :class="{ 'active': isNoteMode }"
                     title="Toggle Note Mode"
                 >
-                    Note Mode: {{ isNoteMode ? 'ON' : 'OFF' }}
+                    Toggle Candidate Mode: {{ isNoteMode ? 'ON' : 'OFF' }}
                 </button>
-                <button @click="generateCandidates">Auto Candidates</button>
+                <button @click="generateCandidates">Populate Candidates</button>
             </div>
         </div>
 

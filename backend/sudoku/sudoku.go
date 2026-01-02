@@ -29,6 +29,7 @@ type Generator struct {
 	BoxHeight int
 	BoxWidth  int
 	Cages     []Cage
+	cageMap   map[Point]int
 }
 
 func init() {
@@ -184,70 +185,34 @@ func GenerateKiller(difficulty string, size int) Puzzle {
 		}
 	}
 
-	// Generate Cages and ensure uniqueness
-	var cages []Cage
-	var board Grid
+	// Generate Cages
+	cages := gen.generateCages(solution)
+	gen.Cages = cages // Set cages for solver
 
-	// Retry loop for unique solution
-	maxRetries := 50
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		cages = gen.generateCages(solution)
-		gen.Cages = cages // Set cages for solver
-
-		// Check uniqueness for "Hard" (empty board)
-		if difficulty == "hard" {
-			emptyBoard := make(Grid, gen.N)
-			for i := range emptyBoard {
-				emptyBoard[i] = make([]int, gen.N)
-			}
-
-			solutions := 0
-			gen.solveCountKiller(emptyBoard, &solutions)
-
-			if solutions == 1 {
-				board = emptyBoard
-				break
-			}
-			// If not unique, try generating new cages
-			continue
-		} else {
-			// For Easy/Medium, we start with full solution and remove digits
-			// but we check uniqueness using Killer constraints
-			board = make(Grid, gen.N)
-			for i := range solution {
-				board[i] = make([]int, gen.N)
-				copy(board[i], solution[i])
-			}
-
-			var holes int
-			if difficulty == "easy" {
-				holes = gen.getHolesCount("medium")
-			} else {
-				holes = gen.getHolesCount("hard")
-			}
-
-			// Use removeDigitsKiller which respects cages
-			gen.removeDigitsKiller(board, holes)
-
-			// For Easy/Medium, we are guaranteed a unique solution by removeDigitsKiller logic
-			break
+	// Build fast lookup map for cages
+	gen.cageMap = make(map[Point]int)
+	for idx, cage := range cages {
+		for _, cell := range cage.Cells {
+			gen.cageMap[cell] = idx
 		}
 	}
 
-	// Fallback if loop finishes without success (should be rare with 50 retries)
-	if board == nil {
-		// Should not happen, but return generated one anyway
-		board = make(Grid, gen.N)
-		if difficulty == "hard" {
-			// empty
-		} else {
-			// full
-			for i := range solution {
-				board[i] = make([]int, gen.N)
-				copy(board[i], solution[i])
-			}
-		}
+	board := make(Grid, gen.N)
+	for i := range solution {
+		board[i] = make([]int, gen.N)
+		copy(board[i], solution[i])
 	}
+
+	var holes int
+	if difficulty == "hard" {
+		holes = gen.N * gen.N // Try to remove all
+	} else if difficulty == "easy" {
+		holes = gen.getHolesCount("medium")
+	} else {
+		holes = gen.getHolesCount("hard")
+	}
+	
+	gen.removeDigitsKiller(board, holes)
 
 	return Puzzle{
 		Solution: solution,
@@ -502,7 +467,11 @@ func (gen *Generator) removeDigitsKiller(g Grid, k int) {
 			g[i][j] = 0
 
 			solutions := 0
-			gen.solveCountKiller(g, &solutions)
+			steps := 0
+			// Limit steps to ~200,000 to prevent hangs. 
+			// If it takes longer, we assume we can't verify uniqueness cheaply, so we keep the clue.
+			maxSteps := 200000 
+			gen.solveCountKiller(g, &solutions, &steps, maxSteps)
 
 			if solutions != 1 {
 				g[i][j] = backup
@@ -534,25 +503,60 @@ func (gen *Generator) solveCount(g Grid, count *int) {
 	*count++
 }
 
-func (gen *Generator) solveCountKiller(g Grid, count *int) {
+func (gen *Generator) solveCountKiller(g Grid, count *int, steps *int, maxSteps int) {
+	*steps++
+	if *steps > maxSteps {
+		*count = 2 // Force stop, treat as non-unique (conservative)
+		return
+	}
+
+	type Move struct {
+		r, c       int
+		candidates []int
+	}
+
+	// Find the cell with the fewest candidates (MRV)
+	var bestMove *Move
+	minCandidates := gen.N + 1
+
 	for i := 0; i < gen.N; i++ {
 		for j := 0; j < gen.N; j++ {
 			if g[i][j] == 0 {
+				var cands []int
 				for num := 1; num <= gen.N; num++ {
 					if gen.isSafeKiller(g, i, j, num) {
-						g[i][j] = num
-						gen.solveCountKiller(g, count)
-						g[i][j] = 0
-						if *count > 1 {
-							return
-						}
+						cands = append(cands, num)
 					}
 				}
-				return
+
+				if len(cands) == 0 {
+					return // Dead end
+				}
+
+				if len(cands) < minCandidates {
+					minCandidates = len(cands)
+					bestMove = &Move{r: i, c: j, candidates: cands}
+				}
 			}
 		}
 	}
-	*count++
+
+	// No empty cells found, solution found
+	if bestMove == nil {
+		*count++
+		return
+	}
+
+	// Try candidates for the best cell
+	r, c := bestMove.r, bestMove.c
+	for _, num := range bestMove.candidates {
+		g[r][c] = num
+		gen.solveCountKiller(g, count, steps, maxSteps)
+		g[r][c] = 0
+		if *count > 1 {
+			return
+		}
+	}
 }
 
 func (gen *Generator) isSafeKiller(g Grid, row, col, num int) bool {
@@ -564,16 +568,8 @@ func (gen *Generator) isSafeKiller(g Grid, row, col, num int) bool {
 	// 2. Killer Sudoku Checks (Cages)
 	// Find the cage this cell belongs to
 	var currentCage *Cage
-	for i := range gen.Cages {
-		for _, cell := range gen.Cages[i].Cells {
-			if cell.Row == row && cell.Col == col {
-				currentCage = &gen.Cages[i]
-				break
-			}
-		}
-		if currentCage != nil {
-			break
-		}
+	if idx, ok := gen.cageMap[Point{row, col}]; ok {
+		currentCage = &gen.Cages[idx]
 	}
 
 	if currentCage == nil {
@@ -582,6 +578,7 @@ func (gen *Generator) isSafeKiller(g Grid, row, col, num int) bool {
 
 	currentSum := 0
 	filledCount := 0
+	used := 0 // Bitmask for used numbers in cage
 
 	for _, cell := range currentCage.Cells {
 		val := g[cell.Row][cell.Col]
@@ -598,6 +595,7 @@ func (gen *Generator) isSafeKiller(g Grid, row, col, num int) bool {
 			}
 			currentSum += val
 			filledCount++
+			used |= (1 << val)
 		}
 	}
 
@@ -607,8 +605,45 @@ func (gen *Generator) isSafeKiller(g Grid, row, col, num int) bool {
 	}
 
 	// If cage is full, sum must match exactly
-	if filledCount == len(currentCage.Cells) {
-		if currentSum != currentCage.Sum {
+	remainingCells := len(currentCage.Cells) - filledCount
+	remainingSum := currentCage.Sum - currentSum
+
+	if remainingCells == 0 {
+		if remainingSum != 0 {
+			return false
+		}
+	} else {
+		// Optimization: Check if remaining sum is achievable with remaining distinct numbers
+		
+		// 1. Minimum possible sum check
+		minSum := 0
+		count := 0
+		for v := 1; v <= gen.N; v++ {
+			if (used & (1 << v)) == 0 {
+				minSum += v
+				count++
+				if count == remainingCells {
+					break
+				}
+			}
+		}
+		if remainingSum < minSum {
+			return false
+		}
+
+		// 2. Maximum possible sum check
+		maxSum := 0
+		count = 0
+		for v := gen.N; v >= 1; v-- {
+			if (used & (1 << v)) == 0 {
+				maxSum += v
+				count++
+				if count == remainingCells {
+					break
+				}
+			}
+		}
+		if remainingSum > maxSum {
 			return false
 		}
 	}

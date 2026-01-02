@@ -16,16 +16,24 @@ func TestGenerateKillerUniqueness(t *testing.T) {
 		BoxHeight: 2,
 		BoxWidth: 3,
 		Cages: pHard.Cages,
+		cageMap: make(map[Point]int),
+	}
+	for idx, cage := range pHard.Cages {
+		for _, cell := range cage.Cells {
+			gen.cageMap[cell] = idx
+		}
 	}
 
-	// Start with empty board
-	emptyBoard := make(Grid, size)
-	for i := range emptyBoard {
-		emptyBoard[i] = make([]int, size)
+	// Start with the generated board (which might have some clues)
+	checkBoard := make(Grid, size)
+	for i := range pHard.Board {
+		checkBoard[i] = make([]int, size)
+		copy(checkBoard[i], pHard.Board[i])
 	}
 
 	count := 0
-	gen.solveCountKiller(emptyBoard, &count)
+	steps := 0
+	gen.solveCountKiller(checkBoard, &count, &steps, 100000)
 
 	if count != 1 {
 		t.Errorf("GenerateKiller('hard') produced a puzzle with %d solutions", count)
@@ -38,6 +46,12 @@ func TestGenerateKillerUniqueness(t *testing.T) {
 		BoxHeight: 2,
 		BoxWidth: 3,
 		Cages: pEasy.Cages,
+		cageMap: make(map[Point]int),
+	}
+	for idx, cage := range pEasy.Cages {
+		for _, cell := range cage.Cells {
+			genEasy.cageMap[cell] = idx
+		}
 	}
 
 	// Copy board
@@ -48,7 +62,8 @@ func TestGenerateKillerUniqueness(t *testing.T) {
 	}
 
 	countEasy := 0
-	genEasy.solveCountKiller(boardEasy, &countEasy)
+	stepsEasy := 0
+	genEasy.solveCountKiller(boardEasy, &countEasy, &stepsEasy, 100000)
 
 	if countEasy != 1 {
 		t.Errorf("GenerateKiller('easy') produced a puzzle with %d solutions", countEasy)
