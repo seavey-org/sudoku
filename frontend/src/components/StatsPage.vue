@@ -3,13 +3,17 @@ import { ref, onMounted } from 'vue'
 
 const emit = defineEmits(['back-to-menu'])
 
-const stats = ref({ totalSolved: 0, details: {} as Record<string, Record<string, number>> })
+const stats = ref({ totalSolved: 0, details: {} as Record<string, Record<string, Record<string, number>>> })
 const loading = ref(true)
 
 const formatType = (type: string) => {
     if (type === 'standard') return 'Classic Sudoku'
     if (type === 'killer') return 'Killer Sudoku'
     return type.charAt(0).toUpperCase() + type.slice(1)
+}
+
+const formatSize = (size: string) => {
+    return `${size}x${size}`
 }
 
 const formatDifficulty = (diff: string) => {
@@ -39,11 +43,14 @@ onMounted(async () => {
                 <span class="value">{{ stats.totalSolved }}</span>
             </div>
 
-            <div v-for="(difficulties, type) in stats.details" :key="type" class="type-section">
+            <div v-for="(sizes, type) in stats.details" :key="type" class="type-section">
                 <h3>{{ formatType(type) }}</h3>
-                <div v-for="(count, difficulty) in difficulties" :key="difficulty" class="stat-item sub-stat">
-                    <span class="label">{{ formatDifficulty(difficulty) }}:</span>
-                    <span class="value">{{ count }}</span>
+                <div v-for="(difficulties, size) in sizes" :key="size" class="size-section">
+                    <h4>{{ formatSize(size) }}</h4>
+                    <div v-for="(count, difficulty) in difficulties" :key="difficulty" class="stat-item sub-stat">
+                        <span class="label">{{ formatDifficulty(difficulty) }}:</span>
+                        <span class="value">{{ count }}</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -81,11 +88,21 @@ h2 {
 }
 
 h3 {
-    margin: 1rem 0 0.5rem 0;
-    font-size: 1.1rem;
+    margin: 1.5rem 0 0.5rem 0;
+    font-size: 1.2rem;
     color: #34495e;
     border-bottom: 2px solid #dad4f6;
     padding-bottom: 0.2rem;
+    text-align: left;
+}
+
+h4 {
+    margin: 0.5rem 0 0.2rem 1rem;
+    font-size: 1rem;
+    color: #7f8c8d;
+    text-align: left;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
 .stat-item {
@@ -103,8 +120,9 @@ h3 {
 }
 
 .stat-item.sub-stat {
-    padding-left: 1rem;
+    padding-left: 2rem;
     border-bottom: 1px solid #f9f9f9;
+    font-size: 0.95rem;
 }
 
 .label {

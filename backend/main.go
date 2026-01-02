@@ -6,14 +6,15 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 
 	"github.com/codyseavey/sudoku/backend/sudoku"
 )
 
 type Stats struct {
-	TotalSolved int                       `json:"totalSolved"`
-	Details     map[string]map[string]int `json:"details"`
+	TotalSolved int                                  `json:"totalSolved"`
+	Details     map[string]map[string]map[string]int `json:"details"`
 }
 
 var (
@@ -54,7 +55,7 @@ func saveStats() {
 func main() {
 	loadStats()
 	if stats.Details == nil {
-		stats.Details = make(map[string]map[string]int)
+		stats.Details = make(map[string]map[string]map[string]int)
 	}
 
 	mux := http.NewServeMux()
@@ -120,16 +121,22 @@ func main() {
 		stats.TotalSolved++
 
 		if stats.Details == nil {
-			stats.Details = make(map[string]map[string]int)
+			stats.Details = make(map[string]map[string]map[string]int)
 		}
 		gType := req.GameType
 		if gType == "" {
 			gType = "standard"
 		}
 		if _, ok := stats.Details[gType]; !ok {
-			stats.Details[gType] = make(map[string]int)
+			stats.Details[gType] = make(map[string]map[string]int)
 		}
-		stats.Details[gType][req.Difficulty]++
+
+		sizeStr := strconv.Itoa(req.Size)
+		if _, ok := stats.Details[gType][sizeStr]; !ok {
+			stats.Details[gType][sizeStr] = make(map[string]int)
+		}
+
+		stats.Details[gType][sizeStr][req.Difficulty]++
 
 		saveStats()
 		statsMu.Unlock()
