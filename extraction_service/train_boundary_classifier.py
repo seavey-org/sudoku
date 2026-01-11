@@ -19,9 +19,12 @@ from sklearn.metrics import classification_report, confusion_matrix, roc_auc_sco
 from sklearn.preprocessing import StandardScaler
 import joblib
 
+# Use paths relative to script location
+SCRIPT_DIR = Path(__file__).resolve().parent
+
 def load_training_data():
     """Load features from extract_boundary_training_data.py output."""
-    data_path = Path('/home/cody/git/src/github.com/codyseavey/sudoku/extraction_service/training_data/boundary_features.npz')
+    data_path = SCRIPT_DIR / 'training_data' / 'boundary_features.npz'
     data = np.load(data_path, allow_pickle=True)
 
     X = data['X']
@@ -107,7 +110,7 @@ def main():
     print(f"ROC-AUC: {roc_auc_score(y_test, y_test_proba):.4f}")
 
     # Save model
-    output_dir = Path('/home/cody/git/src/github.com/codyseavey/sudoku/extraction_service/models')
+    output_dir = SCRIPT_DIR / 'models'
     output_dir.mkdir(parents=True, exist_ok=True)
 
     joblib.dump(best_rf, output_dir / 'boundary_classifier_rf.pkl')

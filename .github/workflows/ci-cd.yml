@@ -7,6 +7,25 @@ on:
     branches: [main]
 
 jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    outputs:
+      test_data: ${{ steps.filter.outputs.test_data }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            test_data:
+              - 'test_data/**'
+              - 'extraction_service/train_*.py'
+              - 'extraction_service/extract_*.py'
+            frontend:
+              - 'frontend/**'
+
   validate-test-data:
     runs-on: ubuntu-latest
     steps:
@@ -92,8 +111,8 @@ jobs:
 
   retrain-models:
     runs-on: ubuntu-latest
-    needs: [test-backend, validate-test-data]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [test-backend, validate-test-data, check-changes]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.check-changes.outputs.test_data == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -135,6 +154,27 @@ jobs:
           python train_boundary_classifier.py
           echo "Boundary classifier training complete"
 
+      - name: Extract cage sum training data
+        run: |
+          cd extraction_service
+          echo "Extracting cage sum training data..."
+          python extract_cage_sum_training_data.py
+          echo "Cage sum data extraction complete"
+
+      - name: Prepare cage sum CNN data
+        run: |
+          cd extraction_service
+          echo "Preparing cage sum CNN data..."
+          python prepare_cage_sum_cnn_data.py
+          echo "Cage sum CNN data preparation complete"
+
+      - name: Train Cage Sum CNN
+        run: |
+          cd extraction_service
+          echo "Training Cage Sum CNN..."
+          python train_cage_sum_cnn.py --epochs 30 --batch-size 32
+          echo "Cage Sum CNN training complete"
+
       - name: Upload retrained models
         uses: actions/upload-artifact@v4
         with:
@@ -143,6 +183,7 @@ jobs:
             extraction_service/models/digit_cnn.pth
             extraction_service/models/boundary_classifier_rf.pkl
             extraction_service/models/boundary_scaler.pkl
+            extraction_service/models/cage_sum_cnn.pth
 
       - name: Display model info
         run: |
@@ -151,8 +192,14 @@ jobs:
 
   deploy:
     runs-on: self-hosted
-    needs: [build-backend, build-frontend, retrain-models]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [build-backend, build-frontend, retrain-models, check-changes]
+    if: |
+      always() &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push' &&
+      needs.build-backend.result == 'success' &&
+      needs.build-frontend.result == 'success' &&
+      (needs.retrain-models.result == 'success' || needs.retrain-models.result == 'skipped')
     environment: production
     env:
       SERVER: "192.168.86.227"
@@ -174,11 +221,22 @@ jobs:
           name: frontend-dist
           path: frontend/dist
 
-      - name: Download ML models artifact
+      - name: Download ML models artifact (from this run)
+        if: needs.retrain-models.result == 'success'
         uses: actions/download-artifact@v4
         with:
           name: ml-models
           path: extraction_service/models
+
+      - name: Download ML models artifact (from previous run)
+        if: needs.retrain-models.result == 'skipped'
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: ci-cd.yml
+          name: ml-models
+          path: extraction_service/models
+          search_artifacts: true
+          if_no_artifact_found: fail
 
       - name: Make backend binary executable
         run: chmod +x backend/sudoku-server
@@ -207,6 +265,7 @@ jobs:
           scp extraction_service/models/digit_cnn.pth $SERVER:$APP_DIR/extraction_service/models/
           scp extraction_service/models/boundary_classifier_rf.pkl $SERVER:$APP_DIR/extraction_service/models/
           scp extraction_service/models/boundary_scaler.pkl $SERVER:$APP_DIR/extraction_service/models/
+          scp extraction_service/models/cage_sum_cnn.pth $SERVER:$APP_DIR/extraction_service/models/
           echo "ML models deployed successfully"
 
       - name: Setup environment variables
@@ -239,10 +298,11 @@ jobs:
           echo "Checking extraction service health endpoint..."
           ssh $SERVER "curl -s http://127.0.0.1:5001/health" | grep -q "ok" || echo "Warning: Extraction service may not be running properly"
 
-          echo "Verifying ML models are deployed..."
+          echo "Verifying ML models exist on server..."
           ssh $SERVER "test -f $APP_DIR/extraction_service/models/digit_cnn.pth || { echo 'ERROR: digit_cnn.pth not found'; exit 1; }"
           ssh $SERVER "test -f $APP_DIR/extraction_service/models/boundary_classifier_rf.pkl || { echo 'ERROR: boundary_classifier_rf.pkl not found'; exit 1; }"
           ssh $SERVER "test -f $APP_DIR/extraction_service/models/boundary_scaler.pkl || { echo 'ERROR: boundary_scaler.pkl not found'; exit 1; }"
+          ssh $SERVER "test -f $APP_DIR/extraction_service/models/cage_sum_cnn.pth || { echo 'ERROR: cage_sum_cnn.pth not found'; exit 1; }"
           echo "All ML models verified on production server"
 
       - name: Start main service
@@ -255,6 +315,14 @@ jobs:
           ssh $SERVER "sudo mv /tmp/sudoku.seavey.dev.conf /etc/nginx/sites-available/sudoku.seavey.dev.conf"
           ssh $SERVER "sudo ln -sf /etc/nginx/sites-available/sudoku.seavey.dev.conf /etc/nginx/sites-enabled/"
           ssh $SERVER "sudo nginx -t && sudo systemctl reload nginx"
+
+      - name: Purge Cloudflare cache
+        if: needs.check-changes.outputs.frontend == 'true'
+        run: |
+          curl -X POST "https://api.cloudflare.com/client/v4/zones/${{ secrets.CLOUDFLARE_ZONE_ID }}/purge_cache" \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            --data '{"hosts":["sudoku.seavey.dev"]}'
 
       - name: Verify deployment
         run: |

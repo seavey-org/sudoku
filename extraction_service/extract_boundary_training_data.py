@@ -20,7 +20,9 @@ import json
 from pathlib import Path
 import sys
 
-sys.path.insert(0, '/home/cody/git/src/github.com/codyseavey/sudoku/extraction_service')
+# Add extraction_service to path for imports
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
 from app import get_warped_grid, get_cell_boundaries, remove_grid_lines, remove_full_grid_lines
 
 def extract_boundary_labels_from_ground_truth(cage_map, size=9):
@@ -256,8 +258,9 @@ def process_puzzle(image_path, json_path, size=9, output_dir='training_data'):
 
 def main():
     """Extract training data from all test puzzles."""
-    test_dir = Path('/home/cody/git/src/github.com/codyseavey/sudoku/test_data/killer_sudoku/9x9')
-    output_dir = Path('/home/cody/git/src/github.com/codyseavey/sudoku/extraction_service/training_data')
+    # Use paths relative to script location
+    test_dir = SCRIPT_DIR.parent / 'test_data' / 'killer_sudoku' / '9x9'
+    output_dir = SCRIPT_DIR / 'training_data'
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / 'boundary_crops' / 'positive').mkdir(parents=True, exist_ok=True)
     (output_dir / 'boundary_crops' / 'negative').mkdir(parents=True, exist_ok=True)

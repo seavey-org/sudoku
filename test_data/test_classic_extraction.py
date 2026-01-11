@@ -4,9 +4,12 @@
 import json
 import os
 import sys
+from pathlib import Path
 import requests
 
-TEST_DIR = "/home/cody/git/src/github.com/codyseavey/sudoku/test_data/classic_sudoku/9x9"
+# Use path relative to script location
+SCRIPT_DIR = Path(__file__).resolve().parent
+TEST_DIR = str(SCRIPT_DIR / "classic_sudoku" / "9x9")
 SERVICE_URL = "http://127.0.0.1:5001/extract-classic"
 
 
