@@ -8,6 +8,7 @@ on:
         required: true
         type: choice
         options:
+          - digit-cnn
           - boundary-classifier
           - both
 
@@ -16,12 +17,15 @@ on:
     # - cron: '0 2 * * 0'
 
 jobs:
-  retrain-boundary-classifier:
-    if: inputs.model_type == 'boundary-classifier' || inputs.model_type == 'both' || github.event_name == 'schedule'
+  retrain-models:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Required to push commits
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-python@v4
         with:
@@ -34,41 +38,86 @@ jobs:
           cd extraction_service
           pip install -r requirements.txt
 
-      - name: Extract boundary training data
+      - name: Train Digit CNN
+        if: inputs.model_type == 'digit-cnn' || inputs.model_type == 'both' || github.event_name == 'schedule'
         run: |
           cd extraction_service
+          echo "Training Digit CNN classifier..."
+          python train_digit_cnn.py --epochs 20 --batch-size 32
+          echo "Digit CNN training complete"
+          ls -lh models/digit_cnn.pth
+
+      - name: Extract boundary training data
+        if: inputs.model_type == 'boundary-classifier' || inputs.model_type == 'both' || github.event_name == 'schedule'
+        run: |
+          cd extraction_service
+          echo "Extracting boundary training data..."
           python extract_boundary_training_data.py
 
-      - name: Train boundary classifier
+      - name: Train Boundary Classifier
+        if: inputs.model_type == 'boundary-classifier' || inputs.model_type == 'both' || github.event_name == 'schedule'
         run: |
           cd extraction_service
+          echo "Training boundary classifier..."
           python train_boundary_classifier.py
+          echo "Boundary classifier training complete"
+          ls -lh models/boundary_classifier_rf.pkl models/boundary_scaler.pkl
 
-      - name: Upload retrained model
+      - name: Commit and push retrained models
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+
+          # Check if models were updated
+          if [[ -n $(git status --porcelain extraction_service/models/) ]]; then
+            echo "Models were updated, committing changes..."
+            git add extraction_service/models/*.pth extraction_service/models/*.pkl
+
+            # Create commit message based on what was trained
+            if [[ "${{ inputs.model_type }}" == "both" ]] || [[ "${{ github.event_name }}" == "schedule" ]]; then
+              COMMIT_MSG="chore: Retrain all ML models (digit CNN + boundary classifier)"
+            elif [[ "${{ inputs.model_type }}" == "digit-cnn" ]]; then
+              COMMIT_MSG="chore: Retrain digit CNN model"
+            else
+              COMMIT_MSG="chore: Retrain boundary classifier model"
+            fi
+
+            git commit -m "$COMMIT_MSG
+
+            Automated model retraining via GitHub Actions
+            - Run: ${{ github.run_number }}
+            - Trigger: ${{ github.event_name }}
+            - Model type: ${{ inputs.model_type }}
+
+            Co-Authored-By: GitHub Actions <actions@github.com>"
+
+            git push
+            echo "Models committed and pushed to main"
+          else
+            echo "No model changes detected"
+          fi
+
+      - name: Upload retrained models
         uses: actions/upload-artifact@v4
         with:
-          name: boundary-classifier-retrained
+          name: retrained-models-${{ github.run_number }}
           path: |
+            extraction_service/models/digit_cnn.pth
             extraction_service/models/boundary_classifier_rf.pkl
             extraction_service/models/boundary_scaler.pkl
           retention-days: 30
 
-      - name: Create release with model
-        if: github.event_name == 'workflow_dispatch'
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: model-boundary-${{ github.run_number }}
-          files: |
-            extraction_service/models/boundary_classifier_rf.pkl
-            extraction_service/models/boundary_scaler.pkl
-          body: |
-            Retrained boundary classifier Random Forest model
-            - Training date: ${{ github.run_id }}
-            - Trigger: ${{ github.event_name }}
-            - Model type: ${{ inputs.model_type }}
-
-            ## Usage
-            To deploy this model:
-            1. Download the artifacts
-            2. Replace files in `extraction_service/models/`
-            3. Commit and push to trigger deployment
+      - name: Create summary
+        run: |
+          echo "## Model Retraining Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Model type:** ${{ inputs.model_type || 'all (scheduled)' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Run number:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Model Files" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          ls -lh extraction_service/models/ >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Models have been committed to main and will be deployed automatically." >> $GITHUB_STEP_SUMMARY

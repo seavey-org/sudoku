@@ -1,0 +1,18 @@
+{
+  "total_samples": 15435,
+  "samples_per_digit": {
+    "0": 11475,
+    "1": 450,
+    "2": 405,
+    "3": 425,
+    "4": 480,
+    "5": 440,
+    "6": 485,
+    "7": 380,
+    "8": 465,
+    "9": 430
+  },
+  "augmentations_per_cell": 5,
+  "image_size": 64,
+  "source_images": 42
+}
