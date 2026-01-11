@@ -225,7 +225,7 @@ func main() {
 		gameType := r.FormValue("gameType")
 		puzzle, err := sudoku.ExtractSudokuFromImage(fileBytes, gameType)
 		if err != nil {
-			log.Printf("Gemini Error: %v", err)
+			log.Printf("Extraction Error: %v", err)
 			http.Error(w, "Failed to process image: "+err.Error(), http.StatusInternalServerError)
 			return
 		}

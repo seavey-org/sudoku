@@ -53,5 +53,40 @@ backend/sudoku_server
 go.work
 server_log.txt
 
-# creds
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+ENV/
+.venv/
+extraction_service/venv/
+
+# Backup files
+*.backup
+*.before_*
+
+# Extraction service - generated training data
+# These are regenerated from test_data/ images during CI/CD
+extraction_service/training_data/boundary_crops/
+extraction_service/training_data/cells/
+extraction_service/training_data/cage_sums/
+extraction_service/training_data/cage_sum_cnn/
+extraction_service/training_data/false_negatives/
+extraction_service/training_data/boundary_features.npz
+extraction_service/training_data/train.txt
+extraction_service/training_data/val.txt
+extraction_service/training_data/metadata.json
+
+# ML training history (regenerated each training run)
+extraction_service/models/*_training_history.json
+extraction_service/models/training_history.json
+
+# Debug images (temporary debugging artifacts)
+test_data/killer_sudoku/debug_*.png
+
+# Credentials
 test_data/google-cloud-adminSvc.json
+*.env
+config.env
