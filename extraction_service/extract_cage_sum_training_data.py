@@ -12,7 +12,7 @@ import numpy as np
 from pathlib import Path
 
 # Puzzles with invalid ground truth - exclude from training
-EXCLUDED_KILLER_PUZZLES = {'23', '24', '26', '27', '28'}
+EXCLUDED_KILLER_PUZZLES = set()
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

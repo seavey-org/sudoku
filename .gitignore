@@ -90,7 +90,10 @@ extraction_service/models/training_history.json
 # Debug images (temporary debugging artifacts)
 test_data/killer_sudoku/debug_*.png
 
+# Imported puzzles (56k+ puzzles from external sources, not needed in repo)
+test_data/killer_sudoku/imported/
+
 # Credentials
-test_data/google-cloud-adminSvc.json
+google-cloud-adminSvc.json
 *.env
 config.env

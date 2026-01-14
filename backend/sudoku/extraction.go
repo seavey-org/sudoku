@@ -35,188 +35,114 @@ func ExtractSudokuFromImage(imageBytes []byte, gameType string) (Puzzle, error) 
 		return emptyPuzzle, fmt.Errorf("extraction service unavailable")
 	}
 
+	endpoint := "/extract-classic"
 	if gameType == "killer" {
-		return extractKillerFromService(imageBytes)
+		endpoint = "/extract-killer"
 	}
-	return extractClassicFromService(imageBytes)
+
+	// Proxy to Python service
+	return callExtractionService(imageBytes, endpoint)
 }
 
-// extractClassicFromService extracts a classic sudoku puzzle using the Python extraction service
-func extractClassicFromService(imageBytes []byte) (Puzzle, error) {
+// ExtractionResponse represents the response from Python extraction service
+type ExtractionResponse struct {
+	Board    [][]int `json:"board"`
+	Cages    []struct {
+		Sum   int `json:"sum"`
+		Cells []struct {
+			Row int `json:"row"`
+			Col int `json:"col"`
+		} `json:"cells"`
+	} `json:"cages"`
+	GameType string `json:"gameType"`
+	Error    string `json:"error,omitempty"`
+}
+
+func callExtractionService(imageBytes []byte, endpoint string) (Puzzle, error) {
 	var emptyPuzzle Puzzle
 
-	// Create a multipart form request
+	// Build multipart form
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
-	// Add the image file
 	part, err := writer.CreateFormFile("image", "puzzle.png")
 	if err != nil {
 		return emptyPuzzle, fmt.Errorf("failed to create form file: %v", err)
 	}
 	if _, err := part.Write(imageBytes); err != nil {
-		return emptyPuzzle, fmt.Errorf("failed to write image data: %v", err)
-	}
-
-	// Add size parameter
-	if err := writer.WriteField("size", "9"); err != nil {
-		return emptyPuzzle, fmt.Errorf("failed to write size field: %v", err)
-	}
-
-	if err := writer.Close(); err != nil {
-		return emptyPuzzle, fmt.Errorf("failed to close writer: %v", err)
-	}
-
-	// Make the request with a timeout
-	client := &http.Client{Timeout: 120 * time.Second}
-	req, err := http.NewRequest("POST", ExtractionServiceURL+"/extract-classic", body)
-	if err != nil {
-		return emptyPuzzle, fmt.Errorf("failed to create request: %v", err)
-	}
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return emptyPuzzle, fmt.Errorf("extraction service error: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return emptyPuzzle, fmt.Errorf("extraction failed: %s", string(respBody))
-	}
-
-	// Parse the response
-	type ClassicExtractionResponse struct {
-		Board Grid `json:"board"`
-	}
-
-	var extractResp ClassicExtractionResponse
-	if err := json.NewDecoder(resp.Body).Decode(&extractResp); err != nil {
-		return emptyPuzzle, fmt.Errorf("failed to parse extraction response: %v", err)
-	}
-
-	puzzle := Puzzle{
-		Board:    extractResp.Board,
-		GameType: "standard",
+		return emptyPuzzle, fmt.Errorf("failed to write image: %v", err)
 	}
 
 	if VerboseLogging {
-		fmt.Printf("DEBUG: Classic extraction successful\n")
-	}
-
-	return puzzle, nil
-}
-
-// extractKillerFromService extracts a killer sudoku puzzle using the Python extraction service
-func extractKillerFromService(imageBytes []byte) (Puzzle, error) {
-	var emptyPuzzle Puzzle
-
-	// Create a multipart form request
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	// Add the image file
-	part, err := writer.CreateFormFile("image", "puzzle.png")
-	if err != nil {
-		return emptyPuzzle, fmt.Errorf("failed to create form file: %v", err)
-	}
-	if _, err := part.Write(imageBytes); err != nil {
-		return emptyPuzzle, fmt.Errorf("failed to write image data: %v", err)
-	}
-
-	// Add size parameter
-	if err := writer.WriteField("size", "9"); err != nil {
-		return emptyPuzzle, fmt.Errorf("failed to write size field: %v", err)
+		if err := writer.WriteField("verbose", "true"); err != nil {
+			return emptyPuzzle, fmt.Errorf("failed to write verbose field: %v", err)
+		}
 	}
 
 	if err := writer.Close(); err != nil {
 		return emptyPuzzle, fmt.Errorf("failed to close writer: %v", err)
 	}
 
-	// Make the request with a timeout
+	// Send request to Python service
 	client := &http.Client{Timeout: 120 * time.Second}
-	req, err := http.NewRequest("POST", ExtractionServiceURL+"/extract", body)
+	req, err := http.NewRequest("POST", ExtractionServiceURL+endpoint, body)
 	if err != nil {
 		return emptyPuzzle, fmt.Errorf("failed to create request: %v", err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
+	if VerboseLogging {
+		fmt.Printf("Calling Python extraction service: %s%s\n", ExtractionServiceURL, endpoint)
+	}
+
 	resp, err := client.Do(req)
 	if err != nil {
-		return emptyPuzzle, fmt.Errorf("extraction service error: %v", err)
+		return emptyPuzzle, fmt.Errorf("extraction request failed: %v", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return emptyPuzzle, fmt.Errorf("extraction failed: %s", string(respBody))
+		return emptyPuzzle, fmt.Errorf("extraction failed (%d): %s", resp.StatusCode, string(respBody))
 	}
 
-	// Parse the response
-	type KillerExtractionResponse struct {
-		Board    Grid                   `json:"board"`
-		CageMap  [][]string             `json:"cage_map"`
-		CageSums map[string]int         `json:"cage_sums"`
-		Metadata map[string]interface{} `json:"metadata"`
+	// Parse response
+	var result ExtractionResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return emptyPuzzle, fmt.Errorf("failed to decode response: %v", err)
 	}
 
-	var extractResp KillerExtractionResponse
-	if err := json.NewDecoder(resp.Body).Decode(&extractResp); err != nil {
-		return emptyPuzzle, fmt.Errorf("failed to parse extraction response: %v", err)
-	}
-
-	// Log metadata if verbose
-	if VerboseLogging && extractResp.Metadata != nil {
-		if valid, ok := extractResp.Metadata["valid"].(bool); ok && !valid {
-			totalSum := 0
-			if ts, ok := extractResp.Metadata["total_sum"].(float64); ok {
-				totalSum = int(ts)
-			}
-			fmt.Printf("DEBUG: Extraction reported invalid (sum=%d, expected=405)\n", totalSum)
-		}
-		if fallback, ok := extractResp.Metadata["fallback_used"].(string); ok {
-			fmt.Printf("DEBUG: Fallback used: %s\n", fallback)
-		}
+	if result.Error != "" {
+		return emptyPuzzle, fmt.Errorf("extraction error: %s", result.Error)
 	}
 
 	// Convert to Puzzle format
 	puzzle := Puzzle{
-		Board:    extractResp.Board,
-		GameType: "killer",
+		Board:    result.Board,
+		GameType: result.GameType,
 	}
 
-	// Build cages from cage_map and cage_sums
-	if len(extractResp.CageMap) == 9 && len(extractResp.CageSums) > 0 {
-		cageCells := make(map[string][]Point)
-
-		for r := 0; r < 9; r++ {
-			if len(extractResp.CageMap[r]) != 9 {
-				return emptyPuzzle, fmt.Errorf("invalid cage_map row size at row %d", r)
+	// Convert cages if present (killer sudoku)
+	if len(result.Cages) > 0 {
+		for _, cage := range result.Cages {
+			var cells []Point
+			for _, cell := range cage.Cells {
+				cells = append(cells, Point{Row: cell.Row, Col: cell.Col})
 			}
-			for c := 0; c < 9; c++ {
-				id := extractResp.CageMap[r][c]
-				cageCells[id] = append(cageCells[id], Point{Row: r, Col: c})
-			}
+			// Sort cells by row then col
+			sort.Slice(cells, func(i, j int) bool {
+				if cells[i].Row != cells[j].Row {
+					return cells[i].Row < cells[j].Row
+				}
+				return cells[i].Col < cells[j].Col
+			})
+			puzzle.Cages = append(puzzle.Cages, Cage{
+				Sum:   cage.Sum,
+				Cells: cells,
+			})
 		}
 
-		for id, sum := range extractResp.CageSums {
-			if cells, ok := cageCells[id]; ok {
-				sort.Slice(cells, func(i, j int) bool {
-					if cells[i].Row != cells[j].Row {
-						return cells[i].Row < cells[j].Row
-					}
-					return cells[i].Col < cells[j].Col
-				})
-
-				puzzle.Cages = append(puzzle.Cages, Cage{
-					Sum:   sum,
-					Cells: cells,
-				})
-			}
-		}
-
-		// Sort cages by the position of their first cell
+		// Sort cages by first cell position
 		sort.Slice(puzzle.Cages, func(i, j int) bool {
 			c1 := puzzle.Cages[i].Cells[0]
 			c2 := puzzle.Cages[j].Cells[0]
@@ -228,12 +154,20 @@ func extractKillerFromService(imageBytes []byte) (Puzzle, error) {
 	}
 
 	if VerboseLogging {
-		totalSum := 0
-		for _, cage := range puzzle.Cages {
-			totalSum += cage.Sum
-		}
-		fmt.Printf("DEBUG: Killer extraction successful. Cages=%d, TotalSum=%d\n", len(puzzle.Cages), totalSum)
+		fmt.Printf("Extraction complete: %d digits, %d cages\n", countNonZero(puzzle.Board), len(puzzle.Cages))
 	}
 
 	return puzzle, nil
+}
+
+func countNonZero(board [][]int) int {
+	count := 0
+	for _, row := range board {
+		for _, val := range row {
+			if val != 0 {
+				count++
+			}
+		}
+	}
+	return count
 }

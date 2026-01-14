@@ -90,6 +90,393 @@ def get_boundary_classifier():
     return _boundary_classifier, _boundary_scaler
 
 
+# Lazy-loaded cage sum CNN classifier
+_cage_sum_cnn = None
+_cage_sum_label_mapping = None
+
+def get_cage_sum_cnn():
+    """Get or create the cage sum CNN classifier.
+
+    Returns (model, device, label_mapping) tuple if loaded, (None, None, None) otherwise.
+    Supports both original CageSumCNN and ImprovedCageSumCNN architectures.
+    """
+    global _cage_sum_cnn, _cage_sum_label_mapping
+    if _cage_sum_cnn is None:
+        try:
+            import torch
+            import torch.nn as nn
+            import torch.nn.functional as F
+
+            # Original CNN architecture
+            class CageSumCNN(nn.Module):
+                def __init__(self, num_classes=45):
+                    super(CageSumCNN, self).__init__()
+                    self.conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1)
+                    self.bn1 = nn.BatchNorm2d(32)
+                    self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+                    self.bn2 = nn.BatchNorm2d(64)
+                    self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
+                    self.bn3 = nn.BatchNorm2d(128)
+                    self.pool = nn.MaxPool2d(2, 2)
+                    self.dropout_conv = nn.Dropout2d(0.25)
+                    self.fc1 = nn.Linear(128 * 8 * 8, 512)
+                    self.dropout_fc = nn.Dropout(0.5)
+                    self.fc2 = nn.Linear(512, 256)
+                    self.fc3 = nn.Linear(256, num_classes)
+                    self.relu = nn.ReLU()
+
+                def forward(self, x):
+                    x = self.pool(self.relu(self.bn1(self.conv1(x))))
+                    x = self.dropout_conv(x)
+                    x = self.pool(self.relu(self.bn2(self.conv2(x))))
+                    x = self.dropout_conv(x)
+                    x = self.pool(self.relu(self.bn3(self.conv3(x))))
+                    x = self.dropout_conv(x)
+                    x = x.view(-1, 128 * 8 * 8)
+                    x = self.relu(self.fc1(x))
+                    x = self.dropout_fc(x)
+                    x = self.relu(self.fc2(x))
+                    x = self.fc3(x)
+                    return x
+
+            # Improved ResNet-style architecture
+            class ResidualBlock(nn.Module):
+                def __init__(self, in_channels, out_channels, stride=1):
+                    super(ResidualBlock, self).__init__()
+                    self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3,
+                                           stride=stride, padding=1, bias=False)
+                    self.bn1 = nn.BatchNorm2d(out_channels)
+                    self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3,
+                                           stride=1, padding=1, bias=False)
+                    self.bn2 = nn.BatchNorm2d(out_channels)
+                    self.skip = nn.Sequential()
+                    if stride != 1 or in_channels != out_channels:
+                        self.skip = nn.Sequential(
+                            nn.Conv2d(in_channels, out_channels, kernel_size=1,
+                                      stride=stride, bias=False),
+                            nn.BatchNorm2d(out_channels)
+                        )
+
+                def forward(self, x):
+                    out = F.relu(self.bn1(self.conv1(x)))
+                    out = self.bn2(self.conv2(out))
+                    out += self.skip(x)
+                    out = F.relu(out)
+                    return out
+
+            class ImprovedCageSumCNN(nn.Module):
+                def __init__(self, num_classes=45):
+                    super(ImprovedCageSumCNN, self).__init__()
+                    self.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
+                    self.bn1 = nn.BatchNorm2d(64)
+                    self.pool1 = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+                    self.layer1 = self._make_layer(64, 64, num_blocks=2, stride=1)
+                    self.layer2 = self._make_layer(64, 128, num_blocks=2, stride=2)
+                    self.layer3 = self._make_layer(128, 256, num_blocks=2, stride=2)
+                    self.layer4 = self._make_layer(256, 512, num_blocks=2, stride=2)
+                    self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+                    self.dropout = nn.Dropout(0.5)
+                    self.fc = nn.Linear(512, num_classes)
+
+                def _make_layer(self, in_channels, out_channels, num_blocks, stride):
+                    layers = []
+                    layers.append(ResidualBlock(in_channels, out_channels, stride))
+                    for _ in range(1, num_blocks):
+                        layers.append(ResidualBlock(out_channels, out_channels, 1))
+                    return nn.Sequential(*layers)
+
+                def forward(self, x):
+                    x = F.relu(self.bn1(self.conv1(x)))
+                    x = self.pool1(x)
+                    x = self.layer1(x)
+                    x = self.layer2(x)
+                    x = self.layer3(x)
+                    x = self.layer4(x)
+                    x = self.avgpool(x)
+                    x = x.view(x.size(0), -1)
+                    x = self.dropout(x)
+                    x = self.fc(x)
+                    return x
+
+            model_dir = Path(__file__).parent / 'models'
+            model_path = model_dir / 'cage_sum_cnn.pth'
+
+            if model_path.exists():
+                print("Loading cage sum CNN classifier...")
+                device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+                # Load checkpoint
+                checkpoint = torch.load(model_path, map_location=device, weights_only=False)
+
+                # Get label mapping from checkpoint
+                if 'idx_to_label' in checkpoint:
+                    _cage_sum_label_mapping = checkpoint['idx_to_label']
+                    num_classes = checkpoint.get('num_classes', len(_cage_sum_label_mapping))
+                else:
+                    # Fallback: assume labels are 1-45
+                    _cage_sum_label_mapping = {i: i+1 for i in range(45)}
+                    num_classes = 45
+
+                # Select architecture based on checkpoint
+                model_type = checkpoint.get('model_type', 'CageSumCNN')
+                if model_type == 'ImprovedCageSumCNN':
+                    model = ImprovedCageSumCNN(num_classes=num_classes)
+                    print(f"Using ImprovedCageSumCNN (ResNet-style)")
+                else:
+                    model = CageSumCNN(num_classes=num_classes)
+                    print(f"Using CageSumCNN (original)")
+
+                model.load_state_dict(checkpoint['model_state_dict'])
+                model.to(device)
+                model.eval()
+                _cage_sum_cnn = (model, device)
+                print(f"Cage sum CNN loaded ({len(_cage_sum_label_mapping)} classes)")
+            else:
+                print(f"Cage sum CNN model not found at {model_path}")
+                return None, None, None
+        except Exception as e:
+            print(f"Failed to load cage sum CNN: {e}")
+            import traceback
+            traceback.print_exc()
+            return None, None, None
+    return _cage_sum_cnn[0], _cage_sum_cnn[1], _cage_sum_label_mapping
+
+
+def preprocess_cage_sum_for_cnn(cell_img):
+    """Preprocess cage sum cell for CNN - MUST match training preprocessing.
+
+    This applies the exact same preprocessing used in prepare_cage_sum_cnn_data.py:
+    1. Extract top-left corner region (where cage sum appears)
+    2. Apply CLAHE normalization
+    3. Bilateral filter denoising
+    4. Deskewing
+    5. Resize to 64x64
+
+    Args:
+        cell_img: Full cell image (e.g., 200x200)
+
+    Returns:
+        Preprocessed 64x64 grayscale image ready for CNN
+    """
+    h, w = cell_img.shape[:2]
+
+    # Step 1: Extract top-left corner (40% height, 65% width with margins)
+    # These ratios match extract_cage_sum_region() in prepare_cage_sum_cnn_data.py
+    crop_h_ratio = 0.40
+    crop_w_ratio = 0.65
+    margin_top = 5
+    margin_left = 8
+
+    crop_h = int(h * crop_h_ratio)
+    crop_w = int(w * crop_w_ratio)
+
+    # Ensure we don't go out of bounds
+    crop_h = min(crop_h, h - margin_top)
+    crop_w = min(crop_w, w - margin_left)
+
+    cage_sum_region = cell_img[margin_top:margin_top + crop_h, margin_left:margin_left + crop_w]
+
+    if cage_sum_region.size == 0:
+        # Fallback: use full cell if crop is empty
+        cage_sum_region = cell_img
+
+    # Step 2: Convert to grayscale
+    if len(cage_sum_region.shape) == 3:
+        gray = cv2.cvtColor(cage_sum_region, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = cage_sum_region.copy()
+
+    # Step 3: Deskewing (matches deskew_crop in prepare_cage_sum_cnn_data.py)
+    coords = np.column_stack(np.where(gray < 200))
+    if len(coords) >= 10:
+        moments = cv2.moments(255 - gray)
+        if moments['mu02'] != 0:
+            skew = moments['mu11'] / moments['mu02']
+            angle = np.degrees(np.arctan(skew))
+            if abs(angle) <= 15:
+                gh, gw = gray.shape
+                M = cv2.getRotationMatrix2D((gw // 2, gh // 2), angle, 1.0)
+                gray = cv2.warpAffine(gray, M, (gw, gh), borderValue=255)
+
+    # Step 4: CLAHE normalization (matches normalize_crop in prepare_cage_sum_cnn_data.py)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
+    normalized = clahe.apply(gray)
+
+    # Step 5: Bilateral filter for denoising
+    normalized = cv2.bilateralFilter(normalized, 5, 50, 50)
+
+    # Step 6: Resize to 64x64
+    resized = cv2.resize(normalized, (64, 64), interpolation=cv2.INTER_AREA)
+
+    # Step 7: Final CLAHE enhancement (matches preprocess_for_cnn in prepare_cage_sum_cnn_data.py)
+    clahe2 = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    enhanced = clahe2.apply(resized)
+
+    return enhanced
+
+
+def extract_board_digits_cnn(warped, size=9, verbose=False):
+    """Extract board digits using the digit CNN classifier.
+
+    Args:
+        warped: Warped grid image (1800x1800 for 9x9)
+        size: Grid size (6 or 9)
+        verbose: Print debug info
+
+    Returns:
+        2D list of digits (0 = empty cell)
+    """
+    from digit_classifier import get_classifier
+
+    classifier = get_classifier()
+    if classifier is None:
+        if verbose:
+            print("Digit CNN not available, falling back to zeros")
+        return [[0] * size for _ in range(size)]
+
+    h, w = warped.shape[:2]
+    cell_h = h // size
+    cell_w = w // size
+
+    board = [[0] * size for _ in range(size)]
+
+    for r in range(size):
+        for c in range(size):
+            y1 = r * cell_h
+            y2 = (r + 1) * cell_h
+            x1 = c * cell_w
+            x2 = (c + 1) * cell_w
+            cell_img = warped[y1:y2, x1:x2]
+
+            # Extract center region (avoid cage sum numbers in corners)
+            # Use 0.12 margin to match training data (extract_training_cells.py line 230)
+            margin = int(min(cell_h, cell_w) * 0.12)
+            center = cell_img[margin:cell_h-margin, margin:cell_w-margin]
+
+            if center.size == 0:
+                continue
+
+            # Predict digit
+            digit, conf = classifier.predict(center)
+
+            # Only accept if confidence is high enough and digit is valid
+            if conf >= 0.5 and 1 <= digit <= size:
+                board[r][c] = digit
+                if verbose:
+                    print(f"Cell [{r},{c}]: digit={digit}, conf={conf:.2f}")
+            elif verbose and digit != 0:
+                print(f"Cell [{r},{c}]: rejected digit={digit}, conf={conf:.2f}")
+
+    return board
+
+
+def apply_tta_augmentations(img):
+    """Apply test-time augmentations to an image.
+
+    Returns list of augmented images for TTA.
+    """
+    augmented = [img]  # Original
+
+    # Horizontal flip
+    augmented.append(cv2.flip(img, 1))
+
+    # Small rotations
+    h, w = img.shape[:2]
+    center = (w // 2, h // 2)
+    for angle in [-5, 5]:
+        M = cv2.getRotationMatrix2D(center, angle, 1.0)
+        rotated = cv2.warpAffine(img, M, (w, h), borderMode=cv2.BORDER_REPLICATE)
+        augmented.append(rotated)
+
+    # Brightness variations
+    for gamma in [0.9, 1.1]:
+        adjusted = np.clip(img.astype(np.float32) * gamma, 0, 255).astype(np.uint8)
+        augmented.append(adjusted)
+
+    return augmented
+
+
+def extract_cage_sums_cnn(warped, structure, size=9, verbose=False, use_tta=True):
+    """Extract cage sums using CNN classifier with optional test-time augmentation.
+
+    Args:
+        warped: Warped grid image (1800x1800)
+        structure: Structure dict with 'cages' list containing 'id' and 'sum_cell'
+        size: Grid size (6 or 9)
+        verbose: Print debug info
+        use_tta: Use test-time augmentation for more robust predictions
+
+    Returns:
+        Dict of cage_id -> detected sum
+    """
+    model, device, label_mapping = get_cage_sum_cnn()
+    if model is None:
+        return {}
+
+    import torch
+
+    cage_sums = {}
+    h, w = warped.shape[:2]
+    cell_h = h // size
+    cell_w = w // size
+
+    for cage in structure['cages']:
+        if not cage.get('sum_cell'):
+            continue
+
+        row, col = cage['sum_cell']
+        cage_id = cage['id']
+
+        # Extract cell
+        y1 = row * cell_h
+        y2 = (row + 1) * cell_h
+        x1 = col * cell_w
+        x2 = (col + 1) * cell_w
+        cell_img = warped[y1:y2, x1:x2]
+
+        if use_tta:
+            # Apply TTA to raw cell image BEFORE preprocessing (matches training augmentation order)
+            augmented_cells = apply_tta_augmentations(cell_img)
+            all_probs = []
+
+            for aug_cell in augmented_cells:
+                # Preprocess each augmented cell
+                preprocessed = preprocess_cage_sum_for_cnn(aug_cell)
+                normalized = preprocessed.astype(np.float32) / 255.0
+                tensor = torch.from_numpy(normalized).unsqueeze(0).unsqueeze(0).to(device)
+
+                with torch.no_grad():
+                    outputs = model(tensor)
+                    probs = torch.softmax(outputs, dim=1)
+                    all_probs.append(probs)
+
+            # Average probabilities across all augmentations
+            avg_probs = torch.mean(torch.stack(all_probs), dim=0)
+            conf, pred_idx = torch.max(avg_probs, dim=1)
+        else:
+            # Single prediction without TTA
+            preprocessed = preprocess_cage_sum_for_cnn(cell_img)
+            normalized = preprocessed.astype(np.float32) / 255.0
+            tensor = torch.from_numpy(normalized).unsqueeze(0).unsqueeze(0).to(device)
+
+            with torch.no_grad():
+                outputs = model(tensor)
+                probs = torch.softmax(outputs, dim=1)
+                conf, pred_idx = torch.max(probs, dim=1)
+
+        pred_sum = label_mapping.get(pred_idx.item(), None)
+        confidence = conf.item()
+
+        if pred_sum is not None and 1 <= pred_sum <= 45:
+            cage_sums[cage_id] = pred_sum
+            if verbose:
+                print(f"CNN cage {cage_id} at [{row},{col}]: {pred_sum} (conf={confidence:.2f})")
+        elif verbose:
+            print(f"CNN cage {cage_id} at [{row},{col}]: no valid prediction")
+
+    return cage_sums
+
+
 # =============================================================================
 # OCR Utilities
 # =============================================================================
@@ -1959,8 +2346,11 @@ def detect_cage_boundaries(warped_clean, x_bounds, y_bounds, size, threshold_mul
     return right_walls, bottom_walls
 
 
-def solve_extraction(image_path, size=None, include_candidates=False, debug=False):
-    """Main extraction function - extract killer sudoku from image.
+def extract_killer_sudoku_ocr(image_path, size=None, include_candidates=False, debug=False):
+    """Extract killer sudoku from image using OCR-based approach.
+
+    This is the legacy OCR-based extraction that uses EasyOCR for both
+    board digits and cage sums. Used as a fallback when CNN extraction fails.
 
     Args:
         image_path: Path to the image file
@@ -2516,7 +2906,7 @@ def extract_with_improvements(image_path, size=None, include_candidates=False, d
         size = 6 if "6x6" in image_path else 9
 
     # Step 1: Initial extraction
-    result = solve_extraction(image_path, size=size, include_candidates=include_candidates, debug=debug)
+    result = extract_killer_sudoku_ocr(image_path, size=size, include_candidates=include_candidates, debug=debug)
     if result is None:
         print("Initial extraction failed")
         return None
@@ -3252,7 +3642,11 @@ def extract_classic_sudoku(image_path, size=9, include_candidates=False, debug=F
     if not is_valid and debug:
         print(f"Validation issues: {issues}")
 
-    result = {"board": board, "validation_issues": issues if not is_valid else []}
+    result = {
+        "board": board,
+        "gameType": "standard",
+        "validation_issues": issues if not is_valid else []
+    }
     if include_candidates:
         result["candidates"] = candidates
 
@@ -3477,6 +3871,312 @@ def extract():
         }
 
         return jsonify(response)
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except:
+            pass
+
+
+def extract_structure_only(image_path, size=9):
+    """Extract cage structure from image without OCR.
+
+    Returns structure needed for CNN-based extraction:
+    - cage_map: 2D grid of cage IDs
+    - cages: list of cage dicts with 'id', 'cells', 'sum_cell'
+    - image: base64-encoded warped grid image
+
+    Args:
+        image_path: Path to puzzle image
+        size: Grid size (6 or 9)
+
+    Returns:
+        Dict with structure info, or None on failure
+    """
+    import base64
+
+    warped = get_warped_grid(image_path)
+    if warped is None:
+        return None
+
+    # Detect grid line positions
+    x_bounds, y_bounds = get_cell_boundaries(warped, size)
+
+    # Clean grid lines for boundary detection
+    warped_clean = remove_grid_lines(warped, size)
+    warped_clean = remove_full_grid_lines(warped_clean, size, debug=False)
+
+    # Detect cage boundaries
+    right_walls, bottom_walls = detect_cage_boundaries(warped_clean, x_bounds, y_bounds, size, threshold_mult=1.0)
+
+    # Reconstruct cages using flood fill
+    visited = set()
+    cages = []
+    for r in range(size):
+        for c in range(size):
+            if (r, c) in visited:
+                continue
+            cells = []
+            q = [(r, c)]
+            visited.add((r, c))
+            while q:
+                cr, cc = q.pop(0)
+                cells.append((cr, cc))
+                if cc + 1 < size and (cr, cc + 1) not in visited and not right_walls[cr][cc]:
+                    visited.add((cr, cc + 1))
+                    q.append((cr, cc + 1))
+                if cc - 1 >= 0 and (cr, cc - 1) not in visited and not right_walls[cr][cc - 1]:
+                    visited.add((cr, cc - 1))
+                    q.append((cr, cc - 1))
+                if cr + 1 < size and (cr + 1, cc) not in visited and not bottom_walls[cr][cc]:
+                    visited.add((cr + 1, cc))
+                    q.append((cr + 1, cc))
+                if cr - 1 >= 0 and (cr - 1, cc) not in visited and not bottom_walls[cr - 1][cc]:
+                    visited.add((cr - 1, cc))
+                    q.append((cr - 1, cc))
+            cells.sort()
+            cages.append({'cells': cells})
+
+    # Assign cage IDs and determine sum_cell (top-left of each cage)
+    def get_id(i):
+        return chr(ord('a') + i) if i < 26 else 'a' + chr(ord('a') + i - 26)
+
+    for i, cage in enumerate(cages):
+        cage['id'] = get_id(i)
+        # Sum cell is the top-left cell of the cage
+        min_r = min(cl[0] for cl in cage['cells'])
+        top_cells = [cl for cl in cage['cells'] if cl[0] == min_r]
+        cage['sum_cell'] = min(top_cells, key=lambda x: x[1])
+
+    cages.sort(key=lambda x: x['cells'][0])
+
+    # Reassign IDs after sorting
+    for i, cage in enumerate(cages):
+        cage['id'] = get_id(i)
+
+    # Build cage_map
+    cage_map = [[None] * size for _ in range(size)]
+    for cage in cages:
+        for (r, c) in cage['cells']:
+            cage_map[r][c] = cage['id']
+
+    # Encode warped image as base64
+    _, buffer = cv2.imencode('.png', warped)
+    warped_b64 = base64.b64encode(buffer).decode('utf-8')
+
+    return {
+        'cage_map': cage_map,
+        'cages': cages,
+        'image': warped_b64
+    }
+
+
+def extract_killer_sudoku(image_path, size=9, debug=False):
+    """Extract killer sudoku puzzle from image.
+
+    This is the primary killer sudoku extraction function. It builds on classic
+    sudoku extraction by adding cage boundary detection and cage sum extraction.
+
+    Architecture (killer as superset of classic):
+    1. Warp grid (same as classic)
+    2. Extract board digits using CNN (same approach as classic could use)
+    3. Detect cage boundaries using ML classifier
+    4. Extract cage sums using CNN
+    5. Validate and return results
+
+    Args:
+        image_path: Path to the puzzle image
+        size: Grid size (6 or 9)
+        debug: If True, print debug info
+
+    Returns:
+        {
+            "board": [[...], ...],
+            "cage_map": [["a", "a", "b", ...], ...],
+            "cage_sums": {"a": 12, "b": 26, ...},
+            "cages": [{"sum": 12, "cells": [...]}, ...]
+        }
+        or None on failure
+    """
+    import base64
+
+    # Step 1: Get warped grid (same as classic extraction)
+    warped = get_warped_grid(image_path)
+    if warped is None:
+        if debug:
+            print("Failed to warp grid")
+        return None
+
+    # Step 2: Extract board digits using CNN
+    # This uses the same digit extraction approach that could be used for classic
+    board = extract_board_digits_cnn(warped, size=size, verbose=debug)
+
+    if debug:
+        filled = sum(1 for r in board for c in r if c > 0)
+        print(f"Extracted {filled} board digits")
+
+    # Step 3: Get cage structure (boundaries + cage map)
+    # Detect grid line positions
+    x_bounds, y_bounds = get_cell_boundaries(warped, size)
+
+    # Clean grid lines for boundary detection
+    warped_clean = remove_grid_lines(warped, size)
+    warped_clean = remove_full_grid_lines(warped_clean, size, debug=False)
+
+    # Detect cage boundaries using ML classifier
+    right_walls, bottom_walls = detect_cage_boundaries(
+        warped_clean, x_bounds, y_bounds, size, threshold_mult=1.0
+    )
+
+    if debug:
+        boundary_count = sum(sum(row) for row in right_walls) + sum(sum(row) for row in bottom_walls)
+        print(f"Detected {boundary_count} cage boundaries")
+
+    # Reconstruct cages using flood fill
+    visited = set()
+    cages = []
+    for r in range(size):
+        for c in range(size):
+            if (r, c) in visited:
+                continue
+            cells = []
+            q = [(r, c)]
+            visited.add((r, c))
+            while q:
+                cr, cc = q.pop(0)
+                cells.append((cr, cc))
+                if cc + 1 < size and (cr, cc + 1) not in visited and not right_walls[cr][cc]:
+                    visited.add((cr, cc + 1))
+                    q.append((cr, cc + 1))
+                if cc - 1 >= 0 and (cr, cc - 1) not in visited and not right_walls[cr][cc - 1]:
+                    visited.add((cr, cc - 1))
+                    q.append((cr, cc - 1))
+                if cr + 1 < size and (cr + 1, cc) not in visited and not bottom_walls[cr][cc]:
+                    visited.add((cr + 1, cc))
+                    q.append((cr + 1, cc))
+                if cr - 1 >= 0 and (cr - 1, cc) not in visited and not bottom_walls[cr - 1][cc]:
+                    visited.add((cr - 1, cc))
+                    q.append((cr - 1, cc))
+            cells.sort()
+            cages.append({'cells': cells})
+
+    # Assign cage IDs and determine sum_cell
+    def get_id(i):
+        return chr(ord('a') + i) if i < 26 else 'a' + chr(ord('a') + i - 26)
+
+    for i, cage in enumerate(cages):
+        cage['id'] = get_id(i)
+        min_r = min(cl[0] for cl in cage['cells'])
+        top_cells = [cl for cl in cage['cells'] if cl[0] == min_r]
+        cage['sum_cell'] = min(top_cells, key=lambda x: x[1])
+
+    cages.sort(key=lambda x: x['cells'][0])
+
+    # Reassign IDs after sorting
+    for i, cage in enumerate(cages):
+        cage['id'] = get_id(i)
+
+    # Build cage_map
+    cage_map = [[None] * size for _ in range(size)]
+    for cage in cages:
+        for (r, c) in cage['cells']:
+            cage_map[r][c] = cage['id']
+
+    # Create structure dict for cage sum extraction
+    structure = {
+        'cage_map': cage_map,
+        'cages': cages
+    }
+
+    # Step 4: Extract cage sums using CNN with TTA (fixed order: augment before preprocessing)
+    cage_sums = extract_cage_sums_cnn(warped, structure, size=size, verbose=debug, use_tta=True)
+    cage_total = sum(cage_sums.values()) if cage_sums else 0
+    expected_total = 405 if size == 9 else 126
+
+    if debug:
+        print(f"CNN cage sums: {len(cage_sums)} cages, total={cage_total} (expected: {expected_total})")
+
+    # Step 5: If CNN total is way off, try OCR fallback
+    if abs(cage_total - expected_total) > 50:
+        if debug:
+            print(f"CNN total {cage_total} is far from {expected_total}, trying OCR fallback...")
+        ocr_result = extract_killer_sudoku_ocr(image_path, size=size, include_candidates=False, debug=debug)
+        if ocr_result is not None:
+            ocr_total = sum(ocr_result['cage_sums'].values())
+            if abs(ocr_total - expected_total) < abs(cage_total - expected_total):
+                cage_sums = ocr_result['cage_sums']
+                # Also use OCR board if we didn't get good digits
+                if sum(1 for r in board for c in r if c > 0) == 0:
+                    board = ocr_result['board']
+                if debug:
+                    print(f"Using OCR cage sums (total={ocr_total})")
+
+    # Build output cages array
+    output_cages = []
+    for cage in cages:
+        cage_id = cage['id']
+        output_cages.append({
+            'sum': cage_sums.get(cage_id, 0),
+            'cells': [{'row': r, 'col': c} for r, c in cage['cells']]
+        })
+
+    output_cages.sort(key=lambda c: (c['cells'][0]['row'], c['cells'][0]['col']))
+
+    return {
+        'board': board,
+        'cage_map': cage_map,
+        'cage_sums': cage_sums,
+        'cages': output_cages,
+        'gameType': 'killer'
+    }
+
+
+@app.route('/extract-killer', methods=['POST'])
+def extract_killer():
+    """
+    Extract killer sudoku from uploaded image.
+
+    This endpoint uses the unified extract_killer_sudoku function which:
+    1. Warps the grid (same as classic extraction)
+    2. Extracts board digits using CNN
+    3. Detects cage boundaries using ML classifier
+    4. Extracts cage sums using CNN (with OCR fallback)
+
+    Returns format compatible with test_killer_extraction.py:
+    - board: 9x9 grid of digits (0 = empty)
+    - cages: list of {sum, cells} for each cage
+    - cage_sums: dict of cage_id -> sum
+    - gameType: 'killer'
+    """
+    if 'image' not in request.files:
+        return jsonify({"error": "No image provided"}), 400
+
+    image_file = request.files['image']
+    size = request.form.get('size', '9')
+    verbose = request.form.get('verbose', '').lower() == 'true'
+
+    try:
+        size = int(size)
+    except ValueError:
+        size = 9
+
+    # Save image to temp file
+    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+        image_file.save(tmp.name)
+        tmp_path = tmp.name
+
+    try:
+        # Use the unified killer sudoku extraction function
+        result = extract_killer_sudoku(tmp_path, size=size, debug=verbose)
+
+        if result is None:
+            return jsonify({"error": "Failed to extract puzzle from image"}), 500
+
+        return jsonify(result)
 
     except Exception as e:
         traceback.print_exc()

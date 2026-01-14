@@ -119,9 +119,10 @@ def extract_features_from_crop(crop, horizontal=False):
     # Darkness analysis (8)
     dark_ratio = np.mean(gray < 80)
     very_dark_ratio = np.mean(gray < 40)
-    center_strip = gray[h//4:3*h//4, w//4:3*w//4] if not horizontal else gray[h//4:3*h//4, w//4:3*w//4]
-    center_mean = np.mean(center_strip)
-    center_min = np.min(center_strip)
+    center_strip = gray[h//4:3*h//4, w//4:3*w//4]
+    # Safety check for empty center_strip (matches inference code)
+    center_mean = np.mean(center_strip) if center_strip.size > 0 else np.mean(gray)
+    center_min = np.min(center_strip) if center_strip.size > 0 else np.min(gray)
     background = np.max(gray)
     features.extend([
         dark_ratio,
@@ -163,19 +164,21 @@ def extract_features_from_crop(crop, horizontal=False):
     # Texture - Local Binary Pattern (3)
     # Simplified LBP: compare center with 8 neighbors
     lbp_hist = []
-    for i in range(1, h-1):
-        for j in range(1, w-1):
-            center = gray[i, j]
-            code = 0
-            code |= (gray[i-1, j-1] > center) << 7
-            code |= (gray[i-1, j] > center) << 6
-            code |= (gray[i-1, j+1] > center) << 5
-            code |= (gray[i, j+1] > center) << 4
-            code |= (gray[i+1, j+1] > center) << 3
-            code |= (gray[i+1, j] > center) << 2
-            code |= (gray[i+1, j-1] > center) << 1
-            code |= (gray[i, j-1] > center) << 0
-            lbp_hist.append(code)
+    # Size check to match inference code (skip for tiny crops)
+    if h > 2 and w > 2:
+        for i in range(1, h-1):
+            for j in range(1, w-1):
+                center = gray[i, j]
+                code = 0
+                code |= (gray[i-1, j-1] > center) << 7
+                code |= (gray[i-1, j] > center) << 6
+                code |= (gray[i-1, j+1] > center) << 5
+                code |= (gray[i, j+1] > center) << 4
+                code |= (gray[i+1, j+1] > center) << 3
+                code |= (gray[i+1, j] > center) << 2
+                code |= (gray[i+1, j-1] > center) << 1
+                code |= (gray[i, j-1] > center) << 0
+                lbp_hist.append(code)
 
     if lbp_hist:
         lbp_mean = np.mean(lbp_hist)

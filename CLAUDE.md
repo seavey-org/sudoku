@@ -29,10 +29,15 @@ npm run build                        # Production build to dist/
 ### Extraction Service (Python/Flask - port 5001)
 ```bash
 cd extraction_service
-source venv/bin/activate             # Activate virtualenv
 pip install -r requirements.txt      # Install dependencies
+
+# Set Google Cloud credentials (required for GCV OCR)
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/sudoku/google-cloud-adminSvc.json
+
 python app.py --port 5001            # Run service
 ```
+
+**Note:** Google Cloud Vision credentials are stored in `google-cloud-adminSvc.json` in the repo root. This file is gitignored.
 
 ### Testing Extraction
 ```bash
@@ -40,7 +45,7 @@ python app.py --port 5001            # Run service
 python test_data/test_classic_extraction.py
 
 # Killer sudoku extraction validation
-cd test_data/killer_sudoku && python test_killer_extraction.py
+python test_data/test_killer_extraction.py
 ```
 
 ### ML Model Training
@@ -49,6 +54,9 @@ cd extraction_service
 python train_digit_cnn.py --epochs 20 --batch-size 32
 python extract_boundary_training_data.py  # Extract from test images
 python train_boundary_classifier.py       # Train boundary detection
+python extract_cage_sum_training_data.py  # Extract cage sum crops
+python prepare_cage_sum_cnn_data.py       # Prepare training data
+python train_cage_sum_cnn_v2.py --epochs 30 --batch-size 32  # Train cage sum CNN
 ```
 
 ### Deployment
@@ -80,15 +88,23 @@ Browser → Frontend (Vue 3, proxies /api/* to :8080 in dev)
 - `killer_*.go` - Killer sudoku cage logic
 - `extraction.go` - Proxy to Python extraction service
 
-**extraction_service/app.py** (3600+ lines)
+**extraction_service/app.py** (4300+ lines)
 - `get_warped_grid()` - Perspective correction to 1800x1800
 - `detect_grid_lines()` - Projection profile-based line detection
 - `is_cage_boundary()` - 9 detection methods for dashed cage lines
 - `is_placed_digit()` - Filters pencil marks from placed digits
-- `extract_classic_sudoku()` - Classic puzzle extraction pipeline
-- `solve_extraction()` - Killer puzzle extraction pipeline
+- `extract_classic_sudoku()` - Classic puzzle extraction pipeline (digits only)
+- `extract_killer_sudoku()` - Primary killer extraction (superset of classic + cage boundaries + cage sums)
+- `extract_killer_sudoku_ocr()` - Legacy OCR-based killer extraction (fallback)
+- `extract_structure_only()` - Extract cage boundaries and structure only
+- `extract_board_digits_cnn()` - CNN-based digit extraction (used by both classic and killer)
+- `extract_cage_sums_cnn()` - CNN-based cage sum extraction
 - `extract_with_gemini_api()` - Gemini API fallback when OCR fails
-- ML models: CNN for digit recognition, Random Forest for boundary detection
+- ML models in `extraction_service/models/`:
+  - `digit_cnn.pth` - PyTorch CNN for digit recognition (0-9)
+  - `cage_sum_cnn.pth` - PyTorch CNN for cage sum recognition
+  - `boundary_classifier_rf.pkl` - Random Forest for cage boundary detection
+  - `boundary_scaler.pkl` - Feature scaler for boundary classifier
 
 **frontend/src/strategies/**
 - 24+ solving algorithms: Naked/Hidden Singles, X-Wing, Swordfish, Y-Wing, Skyscraper, Unique Rectangle, etc.
@@ -102,10 +118,9 @@ test_data/
 │   └── 6x6/*.png + *.json    # 5 test images
 ├── killer_sudoku/
 │   ├── 9x9/*.png + *.json    # 56 test images with ground truth
-│   ├── 6x6/*.png + *.json    # 2 test images
-│   ├── local_extractor.py    # Standalone killer extraction
-│   └── test_killer_extraction.py  # Test runner for killer extraction
+│   └── 6x6/*.png + *.json    # 2 test images
 ├── test_classic_extraction.py    # Test runner for classic extraction
+├── test_killer_extraction.py     # Test runner for killer extraction
 └── validate_*.py                 # Ground truth validation utilities
 ```
 

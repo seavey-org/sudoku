@@ -19,7 +19,8 @@ import random
 # Minimum samples required per split
 MIN_TRAIN_SAMPLES = 2
 MIN_VAL_SAMPLES = 1
-TARGET_SAMPLES_PER_LABEL = 30  # Target for augmentation
+TARGET_SAMPLES_PER_LABEL = 30  # Target for augmentation (reduced - focal loss handles imbalance)
+TARGET_RARE_SAMPLES = 30  # Same target for rare sums - avoid over-augmentation artifacts
 
 def extract_cage_sum_region(cell_img, crop_h_ratio=0.40, crop_w_ratio=0.65):
     """Extract the top-left corner region where cage sum appears.
@@ -42,7 +43,7 @@ def extract_cage_sum_region(cell_img, crop_h_ratio=0.40, crop_w_ratio=0.65):
     margin_top = 5
     margin_left = 8
 
-    cropped = cell_img[margin_top:crop_h, margin_left:crop_w]
+    cropped = cell_img[margin_top:margin_top + crop_h, margin_left:margin_left + crop_w]
 
     return cropped
 
@@ -359,13 +360,21 @@ def main():
         count = len(data_by_label[label])
         print(f"  Label {label:2d}: {count:3d} crops")
 
-    # Augment ALL labels with <30 samples to improve class balance
-    target_count = 30  # Target at least 30 samples per label
+    # Augment ALL labels to improve class balance
+    # Use higher target for very rare sums (≤10 original samples)
     augmented_labels = []
 
-    print("\nAugmenting rare labels...")
+    print("\nAugmenting labels for better class balance...")
     for label in sorted(data_by_label.keys()):
         current_count = len(data_by_label[label])
+
+        # Determine target based on rarity
+        if current_count <= 10:
+            target_count = TARGET_RARE_SAMPLES  # 80 for very rare sums
+        elif current_count <= 30:
+            target_count = TARGET_SAMPLES_PER_LABEL  # 60 for moderately rare
+        else:
+            target_count = max(current_count, TARGET_SAMPLES_PER_LABEL)  # Keep or reach 60
 
         if current_count >= target_count:
             print(f"  Label {label:2d}: {current_count:3d} crops (sufficient)")
