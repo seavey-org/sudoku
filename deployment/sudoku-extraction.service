@@ -3,8 +3,10 @@ Description=Sudoku Killer Extraction Service (Python/Flask)
 After=network.target
 
 [Service]
-User=root
-Group=root
+# Run as dedicated sudoku user for security
+# Create user with: sudo useradd -r -s /usr/sbin/nologin sudoku
+User=sudoku
+Group=sudoku
 
 # The directory where the Python app is located
 WorkingDirectory=/opt/sudoku/extraction_service
@@ -12,6 +14,13 @@ WorkingDirectory=/opt/sudoku/extraction_service
 # Use gunicorn with single worker (due to model memory requirements)
 # Longer timeout for model loading and inference (600s for CPU-based OCR)
 ExecStart=/opt/sudoku/extraction_service/venv/bin/gunicorn --bind 127.0.0.1:5001 --workers 1 --timeout 600 app:app
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/sudoku
+PrivateTmp=true
 
 Restart=always
 RestartSec=5

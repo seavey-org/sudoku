@@ -1,8 +1,7 @@
 package sudoku
 
 import (
-	"math/rand"
-	"time"
+	"math/rand/v2"
 )
 
 type Grid [][]int
@@ -32,14 +31,17 @@ type Generator struct {
 	cageMap   map[Point]int
 }
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
+// cell is a reusable point type for internal grid operations
+type cell struct {
+	r, c int
 }
 
-// Solve attempts to solve a given partial grid
+// Solve attempts to solve a given partial grid.
+// It returns the solution and true if exactly one unique solution exists.
+// The input board is not modified.
 func Solve(initialBoard Grid, size int) (Grid, bool) {
 	gen := Generator{N: size}
-	
+
 	if size == 6 {
 		gen.BoxHeight = 2
 		gen.BoxWidth = 3
@@ -49,40 +51,44 @@ func Solve(initialBoard Grid, size int) (Grid, bool) {
 		gen.BoxWidth = 3
 	}
 
+	// Make a working copy to avoid mutating the input
+	workingBoard := make(Grid, gen.N)
+	for i := range initialBoard {
+		workingBoard[i] = make([]int, gen.N)
+		copy(workingBoard[i], initialBoard[i])
+	}
+
 	// 1. Validate initial board state
 	for i := 0; i < gen.N; i++ {
 		for j := 0; j < gen.N; j++ {
-			num := initialBoard[i][j]
+			num := workingBoard[i][j]
 			if num != 0 {
 				// Temporarily clear cell to check if it's safe in its position
-				initialBoard[i][j] = 0
-				if !gen.isSafe(initialBoard, i, j, num) {
+				workingBoard[i][j] = 0
+				if !gen.isSafe(workingBoard, i, j, num) {
 					return nil, false // Invalid initial state
 				}
-				initialBoard[i][j] = num
+				workingBoard[i][j] = num
 			}
 		}
 	}
 
 	// 2. Deep copy to work on
 	solution := make(Grid, gen.N)
-	for i := range initialBoard {
+	for i := range workingBoard {
 		solution[i] = make([]int, gen.N)
-		copy(solution[i], initialBoard[i])
+		copy(solution[i], workingBoard[i])
 	}
 
 	// 3. Check for uniqueness
 	// We need to count solutions. If > 1, it's invalid for a custom puzzle.
 	count := 0
-	
-	// solveCount modifies the grid, so use a copy for counting if we want to preserve 'solution' for the final return
-	// Actually, solveCount will zero out the grid as it backtracks.
-	// So we should run it on 'solution' copy.
-	
+
+	// solveCount modifies the grid, so use a copy for counting
 	countGrid := make(Grid, gen.N)
-	for i := range initialBoard {
+	for i := range workingBoard {
 		countGrid[i] = make([]int, gen.N)
-		copy(countGrid[i], initialBoard[i])
+		copy(countGrid[i], workingBoard[i])
 	}
 	
 	gen.solveCount(countGrid, &count)
@@ -142,7 +148,7 @@ func Generate(difficulty string, size int) Puzzle {
 		}
 
 		// Try different hole counts within the range
-		holes := minHoles + rand.Intn(maxHoles-minHoles+1)
+		holes := minHoles + rand.IntN(maxHoles-minHoles+1)
 
 		puzzleBoard := make(Grid, gen.N)
 		for i := range g {
@@ -313,9 +319,9 @@ func (gen *Generator) growCage(solution Grid, visited [][]bool, r, c int) Cage {
 	values[solution[r][c]] = true
 
 	// Determine random target size (e.g., 2 to 9 for training data)
-	targetSize := rand.Intn(8) + 2
+	targetSize := rand.IntN(8) + 2
 	if gen.N == 6 {
-		targetSize = rand.Intn(3) + 2
+		targetSize = rand.IntN(3) + 2
 	}
 
 	// Directions: up, down, left, right
@@ -493,11 +499,10 @@ func (gen *Generator) unUsedInBox(g Grid, rowStart, colStart, num int) bool {
 }
 
 func (gen *Generator) removeDigits(g Grid, k int) {
-	type point struct{ r, c int }
-	cells := make([]point, 0, gen.N*gen.N)
-	for i := 0; i < gen.N; i++ {
-		for j := 0; j < gen.N; j++ {
-			cells = append(cells, point{i, j})
+	cells := make([]cell, 0, gen.N*gen.N)
+	for i := range gen.N {
+		for j := range gen.N {
+			cells = append(cells, cell{i, j})
 		}
 	}
 
@@ -505,35 +510,33 @@ func (gen *Generator) removeDigits(g Grid, k int) {
 		cells[i], cells[j] = cells[j], cells[i]
 	})
 
-	count := k
-	for _, cell := range cells {
-		if count <= 0 {
+	remaining := k
+	for _, c := range cells {
+		if remaining <= 0 {
 			break
 		}
 
-		i, j := cell.r, cell.c
-		if g[i][j] != 0 {
-			backup := g[i][j]
-			g[i][j] = 0
+		if g[c.r][c.c] != 0 {
+			backup := g[c.r][c.c]
+			g[c.r][c.c] = 0
 
 			solutions := 0
 			gen.solveCount(g, &solutions)
 
 			if solutions != 1 {
-				g[i][j] = backup
+				g[c.r][c.c] = backup
 			} else {
-				count--
+				remaining--
 			}
 		}
 	}
 }
 
 func (gen *Generator) removeDigitsKiller(g Grid, k int) {
-	type point struct{ r, c int }
-	cells := make([]point, 0, gen.N*gen.N)
-	for i := 0; i < gen.N; i++ {
-		for j := 0; j < gen.N; j++ {
-			cells = append(cells, point{i, j})
+	cells := make([]cell, 0, gen.N*gen.N)
+	for i := range gen.N {
+		for j := range gen.N {
+			cells = append(cells, cell{i, j})
 		}
 	}
 
@@ -541,28 +544,27 @@ func (gen *Generator) removeDigitsKiller(g Grid, k int) {
 		cells[i], cells[j] = cells[j], cells[i]
 	})
 
-	count := k
-	for _, cell := range cells {
-		if count <= 0 {
+	remaining := k
+	for _, c := range cells {
+		if remaining <= 0 {
 			break
 		}
 
-		i, j := cell.r, cell.c
-		if g[i][j] != 0 {
-			backup := g[i][j]
-			g[i][j] = 0
+		if g[c.r][c.c] != 0 {
+			backup := g[c.r][c.c]
+			g[c.r][c.c] = 0
 
 			solutions := 0
 			steps := 0
-			// Limit steps to ~200,000 to prevent hangs. 
+			// Limit steps to ~200,000 to prevent hangs.
 			// If it takes longer, we assume we can't verify uniqueness cheaply, so we keep the clue.
-			maxSteps := 200000 
+			const maxSteps = 200000
 			gen.solveCountKiller(g, &solutions, &steps, maxSteps)
 
 			if solutions != 1 {
-				g[i][j] = backup
+				g[c.r][c.c] = backup
 			} else {
-				count--
+				remaining--
 			}
 		}
 	}

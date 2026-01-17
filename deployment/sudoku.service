@@ -6,15 +6,23 @@ After=network.target
 # Load environment variables (e.g. GOOGLE_API_KEY)
 EnvironmentFile=/opt/sudoku/config.env
 
-# Replace <user> with your actual username on the server (e.g., ubuntu, root, etc.)
-User=root
-Group=root
+# Run as dedicated sudoku user for security
+# Create user with: sudo useradd -r -s /usr/sbin/nologin sudoku
+User=sudoku
+Group=sudoku
 
 # The directory where the binary and 'dist' folder are located
 WorkingDirectory=/opt/sudoku
 
 # The command to start the server
 ExecStart=/opt/sudoku/sudoku-server
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/sudoku
+PrivateTmp=true
 
 Restart=always
 RestartSec=5

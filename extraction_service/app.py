@@ -18,8 +18,29 @@ from flask import Flask, request, jsonify
 import pytesseract
 import joblib
 from pathlib import Path
+import logging
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# Import from new modular structure where available
+try:
+    from models_lib.registry import get_model_registry
+    from models_lib.architectures import CageSumCNN, ImprovedCageSumCNN, ResidualBlock
+    from utils.image import ImageQuality, classify_image_quality, get_preprocessing_params
+    from extraction.ocr import OCRPreprocessor, fix_digit_confusion
+    from extraction.cages import preprocess_cage_sum_for_cnn, apply_tta_augmentations
+    USE_NEW_MODULES = True
+    logger.info("Using new modular structure")
+except ImportError as e:
+    USE_NEW_MODULES = False
+    logger.warning(f"Falling back to legacy code: {e}")
 
 # Lazy-loaded EasyOCR reader
 _reader = None
@@ -27,10 +48,10 @@ _reader = None
 def get_reader():
     global _reader
     if _reader is None:
-        print("Loading EasyOCR model...")
+        logger.info("Loading EasyOCR model...")
         # Use GPU for faster inference
         _reader = easyocr.Reader(['en'], gpu=True)
-        print("EasyOCR model loaded.")
+        logger.info("EasyOCR model loaded.")
     return _reader
 
 
@@ -48,14 +69,14 @@ def get_cnn_classifier():
             from digit_classifier import CNNDigitClassifier, get_model_path
             model_path = get_model_path()
             if os.path.exists(model_path):
-                print("Loading CNN digit classifier...")
+                logger.info("Loading CNN digit classifier...")
                 _cnn_classifier = CNNDigitClassifier(model_path)
-                print("CNN classifier loaded.")
+                logger.info("CNN classifier loaded.")
             else:
-                print(f"CNN model not found at {model_path}, using EasyOCR only")
+                logger.warning(f"CNN model not found at {model_path}, using EasyOCR only")
                 return None
         except Exception as e:
-            print(f"Failed to load CNN classifier: {e}, using EasyOCR only")
+            logger.warning(f"Failed to load CNN classifier: {e}, using EasyOCR only")
             return None
     return _cnn_classifier
 
@@ -77,15 +98,15 @@ def get_boundary_classifier():
             scaler_path = model_dir / 'boundary_scaler.pkl'
 
             if classifier_path.exists() and scaler_path.exists():
-                print("Loading ML boundary classifier...")
+                logger.info("Loading ML boundary classifier...")
                 _boundary_classifier = joblib.load(classifier_path)
                 _boundary_scaler = joblib.load(scaler_path)
-                print("ML boundary classifier loaded successfully")
+                logger.info("ML boundary classifier loaded successfully")
             else:
-                print(f"ML boundary model not found at {model_dir}, using heuristic methods")
+                logger.warning(f"ML boundary model not found at {model_dir}, using heuristic methods")
                 return None, None
         except Exception as e:
-            print(f"Failed to load ML boundary classifier: {e}, using heuristic methods")
+            logger.warning(f"Failed to load ML boundary classifier: {e}, using heuristic methods")
             return None, None
     return _boundary_classifier, _boundary_scaler
 
@@ -202,7 +223,7 @@ def get_cage_sum_cnn():
             model_path = model_dir / 'cage_sum_cnn.pth'
 
             if model_path.exists():
-                print("Loading cage sum CNN classifier...")
+                logger.info("Loading cage sum CNN classifier...")
                 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
                 # Load checkpoint
@@ -221,21 +242,21 @@ def get_cage_sum_cnn():
                 model_type = checkpoint.get('model_type', 'CageSumCNN')
                 if model_type == 'ImprovedCageSumCNN':
                     model = ImprovedCageSumCNN(num_classes=num_classes)
-                    print(f"Using ImprovedCageSumCNN (ResNet-style)")
+                    logger.info(f"Using ImprovedCageSumCNN (ResNet-style)")
                 else:
                     model = CageSumCNN(num_classes=num_classes)
-                    print(f"Using CageSumCNN (original)")
+                    logger.info(f"Using CageSumCNN (original)")
 
                 model.load_state_dict(checkpoint['model_state_dict'])
                 model.to(device)
                 model.eval()
                 _cage_sum_cnn = (model, device)
-                print(f"Cage sum CNN loaded ({len(_cage_sum_label_mapping)} classes)")
+                logger.info(f"Cage sum CNN loaded ({len(_cage_sum_label_mapping)} classes)")
             else:
-                print(f"Cage sum CNN model not found at {model_path}")
+                logger.info(f"Cage sum CNN model not found at {model_path}")
                 return None, None, None
         except Exception as e:
-            print(f"Failed to load cage sum CNN: {e}")
+            logger.info(f"Failed to load cage sum CNN: {e}")
             import traceback
             traceback.print_exc()
             return None, None, None
@@ -331,7 +352,7 @@ def extract_board_digits_cnn(warped, size=9, verbose=False):
     classifier = get_classifier()
     if classifier is None:
         if verbose:
-            print("Digit CNN not available, falling back to zeros")
+            logger.info("Digit CNN not available, falling back to zeros")
         return [[0] * size for _ in range(size)]
 
     h, w = warped.shape[:2]
@@ -363,9 +384,9 @@ def extract_board_digits_cnn(warped, size=9, verbose=False):
             if conf >= 0.5 and 1 <= digit <= size:
                 board[r][c] = digit
                 if verbose:
-                    print(f"Cell [{r},{c}]: digit={digit}, conf={conf:.2f}")
+                    logger.info(f"Cell [{r},{c}]: digit={digit}, conf={conf:.2f}")
             elif verbose and digit != 0:
-                print(f"Cell [{r},{c}]: rejected digit={digit}, conf={conf:.2f}")
+                logger.info(f"Cell [{r},{c}]: rejected digit={digit}, conf={conf:.2f}")
 
     return board
 
@@ -470,9 +491,9 @@ def extract_cage_sums_cnn(warped, structure, size=9, verbose=False, use_tta=True
         if pred_sum is not None and 1 <= pred_sum <= 45:
             cage_sums[cage_id] = pred_sum
             if verbose:
-                print(f"CNN cage {cage_id} at [{row},{col}]: {pred_sum} (conf={confidence:.2f})")
+                logger.info(f"CNN cage {cage_id} at [{row},{col}]: {pred_sum} (conf={confidence:.2f})")
         elif verbose:
-            print(f"CNN cage {cage_id} at [{row},{col}]: no valid prediction")
+            logger.info(f"CNN cage {cage_id} at [{row},{col}]: no valid prediction")
 
     return cage_sums
 
@@ -1133,7 +1154,7 @@ def remove_full_grid_lines(warped_clean, size=9, debug=False):
         if coverage > 0.95 and mean_val < 80:
             # This is a full grid line - remove it
             if debug:
-                print(f"  Removing full vertical grid line at position {line_idx} (coverage={coverage:.2%}, mean={mean_val:.1f})")
+                logger.info(f"  Removing full vertical grid line at position {line_idx} (coverage={coverage:.2%}, mean={mean_val:.1f})")
 
             # Remove using morphological opening
             strip_to_clean = result[:, x_start:x_end].copy()
@@ -1167,7 +1188,7 @@ def remove_full_grid_lines(warped_clean, size=9, debug=False):
         if coverage > 0.95 and mean_val < 80:
             # This is a full grid line - remove it
             if debug:
-                print(f"  Removing full horizontal grid line at position {line_idx} (coverage={coverage:.2%}, mean={mean_val:.1f})")
+                logger.info(f"  Removing full horizontal grid line at position {line_idx} (coverage={coverage:.2%}, mean={mean_val:.1f})")
 
             # Remove using morphological opening
             strip_to_clean = result[y_start:y_end, :].copy()
@@ -1210,7 +1231,7 @@ def filter_grid_line_false_positives(right_walls, bottom_walls, size=9, debug=Fa
         # If >threshold cells have a boundary at this column, it's likely a grid line
         if boundary_count > threshold:
             if debug:
-                print(f"  Vertical col {col_idx}: {boundary_count}/{size} boundaries (>threshold={threshold}) - REMOVING")
+                logger.info(f"  Vertical col {col_idx}: {boundary_count}/{size} boundaries (>threshold={threshold}) - REMOVING")
             # Remove all boundaries at this column position
             for r in range(size):
                 right_walls[r][col_idx] = False
@@ -1223,7 +1244,7 @@ def filter_grid_line_false_positives(right_walls, bottom_walls, size=9, debug=Fa
         # If >threshold cells have a boundary at this row, it's likely a grid line
         if boundary_count > threshold:
             if debug:
-                print(f"  Horizontal row {row_idx}: {boundary_count}/{size} boundaries (>threshold={threshold}) - REMOVING")
+                logger.info(f"  Horizontal row {row_idx}: {boundary_count}/{size} boundaries (>threshold={threshold}) - REMOVING")
             # Remove all boundaries at this row position
             for c in range(size):
                 bottom_walls[row_idx][c] = False
@@ -2385,7 +2406,7 @@ def extract_killer_sudoku_ocr(image_path, size=None, include_candidates=False, d
     # ROBUST SOLUTION: Remove grid lines that span entire grid (>95% coverage)
     # This eliminates false positives from dailykillersudoku.com style grids
     if debug:
-        print("Checking for full-grid lines to remove...")
+        logger.info("Checking for full-grid lines to remove...")
     warped_clean = remove_full_grid_lines(warped_clean, size, debug=debug)
 
     # Detect cage boundaries with default threshold (1.0)
@@ -2394,7 +2415,7 @@ def extract_killer_sudoku_ocr(image_path, size=None, include_candidates=False, d
 
     if debug:
         boundary_count = sum(sum(row) for row in right_walls) + sum(sum(row) for row in bottom_walls)
-        print(f"Boundaries detected: {boundary_count}")
+        logger.info(f"Boundaries detected: {boundary_count}")
 
     # NOTE: Pattern-based filtering (>6/9 cells) was tested and FAILED
     # Result: 2/21 PASS (catastrophic - removed too many legitimate boundaries)
@@ -2524,7 +2545,7 @@ def extract_killer_sudoku_ocr(image_path, size=None, include_candidates=False, d
                 cell_candidates = detect_candidates_in_cell(cell_img, reader, size)
                 candidates[r][c] = cell_candidates
                 if debug and cell_candidates:
-                    print(f"Cell [{r},{c}]: candidates={cell_candidates}")
+                    logger.info(f"Cell [{r},{c}]: candidates={cell_candidates}")
 
             # Cage sum
             if (r, c) in sum_cell_to_idx:
@@ -2620,7 +2641,7 @@ def extract_killer_sudoku_ocr(image_path, size=None, include_candidates=False, d
     # Validate extraction before returning
     is_valid, issues = ExtractionValidator.validate_killer(board, cage_map, cage_sums, size)
     if not is_valid and debug:
-        print(f"Validation issues: {issues}")
+        logger.info(f"Validation issues: {issues}")
 
     # OPTION A: Post-process to fix common false positives
     # False positives are single-cell cages with very small sums (0, 1, 2)
@@ -2629,7 +2650,7 @@ def extract_killer_sudoku_ocr(image_path, size=None, include_candidates=False, d
 
     if total_sum != target_sum and abs(total_sum - target_sum) <= 25:
         if debug:
-            print(f"Sum {total_sum}/{target_sum} (diff={total_sum - target_sum}), attempting cleanup...")
+            logger.info(f"Sum {total_sum}/{target_sum} (diff={total_sum - target_sum}), attempting cleanup...")
 
         # Find single-cell cages with suspicious sums
         cage_to_cells = {}
@@ -2659,7 +2680,7 @@ def extract_killer_sudoku_ocr(image_path, size=None, include_candidates=False, d
 
         if suspicious:
             if debug:
-                print(f"Found {len(suspicious)} suspicious single-cell cages: {[(s[0], s[1]) for s in suspicious]}")
+                logger.info(f"Found {len(suspicious)} suspicious single-cell cages: {[(s[0], s[1]) for s in suspicious]}")
 
             # Merge suspicious cages with adjacent cages
             for cage_id, cage_sum, (r, c) in sorted(suspicious, key=lambda x: x[1]):
@@ -2677,7 +2698,7 @@ def extract_killer_sudoku_ocr(image_path, size=None, include_candidates=False, d
                     merge_with = max(neighbors, key=lambda x: x[1])[0]
 
                     if debug:
-                        print(f"  Merging cage {cage_id} (sum={cage_sum}) into {merge_with}")
+                        logger.info(f"  Merging cage {cage_id} (sum={cage_sum}) into {merge_with}")
 
                     # Update cage_map
                     cage_map[r][c] = merge_with
@@ -2692,7 +2713,7 @@ def extract_killer_sudoku_ocr(image_path, size=None, include_candidates=False, d
 
                     if total_sum == target_sum:
                         if debug:
-                            print(f"  Target sum achieved!")
+                            logger.info(f"  Target sum achieved!")
                         break
 
     # OPTION C: Check if sum == target, use Gemini fallback if not
@@ -2700,7 +2721,7 @@ def extract_killer_sudoku_ocr(image_path, size=None, include_candidates=False, d
 
     if total_sum != target_sum:
         if debug:
-            print(f"Sum mismatch: {total_sum}/{target_sum}, attempting Gemini fallback...")
+            logger.info(f"Sum mismatch: {total_sum}/{target_sum}, attempting Gemini fallback...")
 
         # Try Gemini API as fallback
         gemini_result = extract_with_gemini_api(image_path, size, debug=debug)
@@ -2708,12 +2729,12 @@ def extract_killer_sudoku_ocr(image_path, size=None, include_candidates=False, d
         if gemini_result is not None:
             gemini_sum = sum(gemini_result['cage_sums'].values())
             if debug:
-                print(f"Gemini sum: {gemini_sum}/{target_sum}")
+                logger.info(f"Gemini sum: {gemini_sum}/{target_sum}")
 
             # If Gemini got it right, use Gemini result
             if gemini_sum == target_sum:
                 if debug:
-                    print("Using Gemini result (sum matches target)")
+                    logger.info("Using Gemini result (sum matches target)")
                 result = gemini_result
                 result["validation_issues"] = []
                 result["fallback_used"] = "gemini"
@@ -2723,7 +2744,7 @@ def extract_killer_sudoku_ocr(image_path, size=None, include_candidates=False, d
             else:
                 # Neither worked, return local result with flags
                 if debug:
-                    print(f"Both local ({total_sum}) and Gemini ({gemini_sum}) failed to match target")
+                    logger.info(f"Both local ({total_sum}) and Gemini ({gemini_sum}) failed to match target")
 
     # Return local result (either sum matches or fallback failed/unavailable)
     result = {
@@ -2760,7 +2781,7 @@ def extract_with_gemini_api(image_path, size=9, debug=False):
         api_key = os.environ.get('GOOGLE_API_KEY')
         if not api_key:
             if debug:
-                print("GOOGLE_API_KEY not set, skipping Gemini fallback")
+                logger.info("GOOGLE_API_KEY not set, skipping Gemini fallback")
             return None
 
         # Read and encode image
@@ -2799,13 +2820,13 @@ Rules:
 
         if response.status_code != 200:
             if debug:
-                print(f"Gemini API error: {response.status_code}")
+                logger.info(f"Gemini API error: {response.status_code}")
             return None
 
         resp_json = response.json()
         if 'candidates' not in resp_json or len(resp_json['candidates']) == 0:
             if debug:
-                print("No candidates in Gemini response")
+                logger.info("No candidates in Gemini response")
             return None
 
         text = resp_json['candidates'][0]['content']['parts'][0]['text']
@@ -2837,13 +2858,13 @@ Rules:
         result['size'] = size
 
         if debug:
-            print(f"Gemini extraction successful")
+            logger.info(f"Gemini extraction successful")
 
         return result
 
     except Exception as e:
         if debug:
-            print(f"Gemini extraction failed: {e}")
+            logger.info(f"Gemini extraction failed: {e}")
         return None
 
 
@@ -2908,23 +2929,23 @@ def extract_with_improvements(image_path, size=None, include_candidates=False, d
     # Step 1: Initial extraction
     result = extract_killer_sudoku_ocr(image_path, size=size, include_candidates=include_candidates, debug=debug)
     if result is None:
-        print("Initial extraction failed")
+        logger.info("Initial extraction failed")
         return None
 
     initial_cages = len(result['cage_sums'])
     initial_sum = sum(result['cage_sums'].values())
-    print(f"Initial extraction: {initial_cages} cages, sum={initial_sum}")
+    logger.info(f"Initial extraction: {initial_cages} cages, sum={initial_sum}")
 
     # Step 2: Validate
     is_valid, errors = validate_extraction(result, size)
     if is_valid:
-        print("Initial extraction is valid!")
+        logger.info("Initial extraction is valid!")
         return result
 
-    print(f"Initial validation failed: {len(errors)} errors")
+    logger.info(f"Initial validation failed: {len(errors)} errors")
 
     # Return best effort result
-    print("Returning best effort result")
+    logger.info("Returning best effort result")
     return result
 
 
@@ -3372,9 +3393,9 @@ def extract_classic_sudoku(image_path, size=9, include_candidates=False, debug=F
     preprocess_params = get_preprocessing_params(image_quality)
 
     if debug:
-        print(f"Image quality: {image_quality}")
-        print(f"Metrics: {quality_metrics}")
-        print(f"Params: {preprocess_params}")
+        logger.info(f"Image quality: {image_quality}")
+        logger.info(f"Metrics: {quality_metrics}")
+        logger.info(f"Params: {preprocess_params}")
 
     warped = get_warped_grid(image_path)
     if warped is None:
@@ -3565,14 +3586,14 @@ def extract_classic_sudoku(image_path, size=9, include_candidates=False, debug=F
 
             if not is_placed and not is_possibly_highlighted:
                 if debug:
-                    print(f"Cell [{r},{c}]: skipped ({reason})")
+                    logger.info(f"Cell [{r},{c}]: skipped ({reason})")
                 board[r][c] = 0
                 # If include_candidates, try to detect pencil marks in empty cells
                 if include_candidates:
                     cell_candidates = detect_candidates_in_cell(cell_img, reader, size)
                     candidates[r][c] = cell_candidates
                     if debug and cell_candidates:
-                        print(f"Cell [{r},{c}]: candidates={cell_candidates}")
+                        logger.info(f"Cell [{r},{c}]: candidates={cell_candidates}")
                 continue
 
             # Run OCR
@@ -3626,7 +3647,7 @@ def extract_classic_sudoku(image_path, size=9, include_candidates=False, debug=F
                 digit = 0
 
             if debug:
-                print(f"Cell [{r},{c}]: digit={digit}, score={score:.2f}, threshold={conf_threshold:.2f}")
+                logger.info(f"Cell [{r},{c}]: digit={digit}, score={score:.2f}, threshold={conf_threshold:.2f}")
 
             board[r][c] = digit
 
@@ -3635,12 +3656,12 @@ def extract_classic_sudoku(image_path, size=9, include_candidates=False, debug=F
                 cell_candidates = detect_candidates_in_cell(cell_img, reader, size)
                 candidates[r][c] = cell_candidates
                 if debug and cell_candidates:
-                    print(f"Cell [{r},{c}]: candidates={cell_candidates}")
+                    logger.info(f"Cell [{r},{c}]: candidates={cell_candidates}")
 
     # Validate extraction before returning
     is_valid, issues = ExtractionValidator.validate_classic(board, size)
     if not is_valid and debug:
-        print(f"Validation issues: {issues}")
+        logger.info(f"Validation issues: {issues}")
 
     result = {
         "board": board,
@@ -4008,7 +4029,7 @@ def extract_killer_sudoku(image_path, size=9, debug=False):
     warped = get_warped_grid(image_path)
     if warped is None:
         if debug:
-            print("Failed to warp grid")
+            logger.info("Failed to warp grid")
         return None
 
     # Step 2: Extract board digits using CNN
@@ -4017,7 +4038,7 @@ def extract_killer_sudoku(image_path, size=9, debug=False):
 
     if debug:
         filled = sum(1 for r in board for c in r if c > 0)
-        print(f"Extracted {filled} board digits")
+        logger.info(f"Extracted {filled} board digits")
 
     # Step 3: Get cage structure (boundaries + cage map)
     # Detect grid line positions
@@ -4034,7 +4055,7 @@ def extract_killer_sudoku(image_path, size=9, debug=False):
 
     if debug:
         boundary_count = sum(sum(row) for row in right_walls) + sum(sum(row) for row in bottom_walls)
-        print(f"Detected {boundary_count} cage boundaries")
+        logger.info(f"Detected {boundary_count} cage boundaries")
 
     # Reconstruct cages using flood fill
     visited = set()
@@ -4098,12 +4119,12 @@ def extract_killer_sudoku(image_path, size=9, debug=False):
     expected_total = 405 if size == 9 else 126
 
     if debug:
-        print(f"CNN cage sums: {len(cage_sums)} cages, total={cage_total} (expected: {expected_total})")
+        logger.info(f"CNN cage sums: {len(cage_sums)} cages, total={cage_total} (expected: {expected_total})")
 
     # Step 5: If CNN total is way off, try OCR fallback
     if abs(cage_total - expected_total) > 50:
         if debug:
-            print(f"CNN total {cage_total} is far from {expected_total}, trying OCR fallback...")
+            logger.info(f"CNN total {cage_total} is far from {expected_total}, trying OCR fallback...")
         ocr_result = extract_killer_sudoku_ocr(image_path, size=size, include_candidates=False, debug=debug)
         if ocr_result is not None:
             ocr_total = sum(ocr_result['cage_sums'].values())
@@ -4113,7 +4134,7 @@ def extract_killer_sudoku(image_path, size=9, debug=False):
                 if sum(1 for r in board for c in r if c > 0) == 0:
                     board = ocr_result['board']
                 if debug:
-                    print(f"Using OCR cage sums (total={ocr_total})")
+                    logger.info(f"Using OCR cage sums (total={ocr_total})")
 
     # Build output cages array
     output_cages = []
@@ -4309,7 +4330,7 @@ if __name__ == '__main__':
     parser.add_argument('--host', type=str, default='127.0.0.1', help='Host to bind to')
     args = parser.parse_args()
 
-    print(f"Starting extraction service on {args.host}:{args.port}")
-    print("Extraction service ready!")
+    logger.info(f"Starting extraction service on {args.host}:{args.port}")
+    logger.info("Extraction service ready!")
 
     app.run(host=args.host, port=args.port, debug=False)

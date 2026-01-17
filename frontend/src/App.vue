@@ -57,65 +57,78 @@ const onPuzzleCompleted = (data: { board: (number | null)[][] }) => {
     localStorage.removeItem(`sudoku_game_state_${gameSettings.value.size}`)
 }
 
+// Storage key constant
+const STORAGE_KEY_PREFIX = 'sudoku_game_state_'
+
+// Helper to load saved game state for a given size
+interface SavedGameState {
+    board: (number | null)[][]
+    difficulty?: string
+    isCustomMode?: boolean
+    gameType?: string
+}
+
+const loadSavedGameState = (size: number): SavedGameState | null => {
+    const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}${size}`)
+    if (!saved) return null
+
+    try {
+        const state = JSON.parse(saved)
+        if (state?.board) {
+            return state as SavedGameState
+        }
+    } catch (e) {
+        console.error(`Failed to parse saved game state for size ${size}`, e)
+    }
+    return null
+}
+
+// Helper to parse imported puzzle from URL
+const parseImportedPuzzle = (importData: string) => {
+    try {
+        const decoded = JSON.parse(atob(importData))
+        if (decoded.board && decoded.solution) {
+            return decoded
+        }
+    } catch (e) {
+        console.error("Failed to parse imported puzzle", e)
+    }
+    return null
+}
+
 onMounted(() => {
-    // Check for import param
+    // Check for import param first
     const params = new URLSearchParams(window.location.search)
     const importData = params.get('import')
-    
+
     if (importData) {
-        try {
-            const decoded = JSON.parse(atob(importData))
-            if (decoded.board && decoded.solution) {
-                gameSettings.value = { 
-                    difficulty: decoded.difficulty || 'imported', 
-                    size: decoded.size || 9,
-                    isCustomMode: false,
-                    gameType: 'standard'
-                }
-                importedPuzzle.value = decoded
-                currentView.value = 'game'
-                return
+        const decoded = parseImportedPuzzle(importData)
+        if (decoded) {
+            gameSettings.value = {
+                difficulty: decoded.difficulty || 'imported',
+                size: decoded.size || 9,
+                isCustomMode: false,
+                gameType: 'standard'
             }
-        } catch (e) {
-            console.error("Failed to parse imported puzzle", e)
+            importedPuzzle.value = decoded
+            currentView.value = 'game'
+            return
         }
     }
 
-    // Check if there is an active game (only if no import)
-    // We check both potential keys
-    const saved9 = localStorage.getItem('sudoku_game_state_9')
-    const saved6 = localStorage.getItem('sudoku_game_state_6')
-    
-    if (saved9) {
-        try {
-            const state = JSON.parse(saved9)
-            if (state && state.board) {
-                gameSettings.value = { 
-                    difficulty: state.difficulty || 'medium', 
-                    size: 9,
-                    isCustomMode: state.isCustomMode || false,
-                    gameType: state.gameType || 'standard'
-                }
-                currentView.value = 'game'
-                return
+    // Check for saved games (9x9 first, then 6x6)
+    for (const size of [9, 6]) {
+        const state = loadSavedGameState(size)
+        if (state) {
+            gameSettings.value = {
+                difficulty: state.difficulty || 'medium',
+                size,
+                isCustomMode: state.isCustomMode || false,
+                gameType: state.gameType || 'standard'
             }
-        } catch (e) {}
-    }
-    
-    if (saved6) {
-        try {
-            const state = JSON.parse(saved6)
-            if (state && state.board) {
-                gameSettings.value = { 
-                    difficulty: state.difficulty || 'medium', 
-                    size: 6,
-                    isCustomMode: state.isCustomMode || false,
-                    gameType: state.gameType || 'standard'
-                }
-                currentView.value = 'game'
-                return
-            }
-        } catch (e) {}
+            currentView.value = 'game'
+            return
+        }
     }
 })
 </script>
