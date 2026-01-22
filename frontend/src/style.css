@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@source "../index.html";
+@source "./**/*.{vue,js,ts,jsx,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* Base styles */
