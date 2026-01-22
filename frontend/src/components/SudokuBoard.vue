@@ -1151,20 +1151,18 @@ onUnmounted(() => {
 }
 
 .grid-outer {
-  display: flow-root; /* Create new block formatting context */
   position: relative;
   width: 100%;
   max-width: 450px;
   margin-bottom: 20px;
-  contain: layout style paint; /* Fully contain the grid */
 }
 
 .grid {
-  display: grid;
-  grid-template-columns: repeat(v-bind(size), 1fr);
+  display: table;
+  table-layout: fixed;
+  border-collapse: collapse;
   background-color: #000;
   border: 3px solid #000;
-  gap: 0;
   width: 100%;
 }
 
@@ -1189,15 +1187,17 @@ onUnmounted(() => {
 }
 
 .row {
-  display: contents;
+  display: table-row;
 }
 
 .cell {
+  display: table-cell;
   background-color: white;
-  aspect-ratio: 1;
   position: relative;
   border: 1px solid #ccc;
   box-sizing: border-box;
+  vertical-align: middle;
+  text-align: center;
 }
 
 :where(.dark, .dark *) .cell {
@@ -1356,8 +1356,6 @@ onUnmounted(() => {
     margin-bottom: 10px;
     width: 100%;
     max-width: 450px;
-    position: relative;
-    z-index: 50;
 }
 
 .controls {
@@ -1510,14 +1508,10 @@ button.game-btn.active {
 }
 
 .game-area {
-    display: block;
-    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     width: 100%;
-}
-
-.game-area > * {
-    margin-left: auto;
-    margin-right: auto;
 }
 
 .number-pad {
