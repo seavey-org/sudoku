@@ -927,7 +927,7 @@ onUnmounted(() => {
       <div class="grid" :class="`size-${size}`">
         <div class="paused-overlay" v-if="isPaused">
           <h2>PAUSED</h2>
-          <button class="primary-action" @click="resumeTimer">Resume</button>
+          <button class="game-btn primary-action" @click="resumeTimer">Resume</button>
         </div>
         <div v-for="(row, rIndex) in board" :key="rIndex" class="row">
           <div
@@ -997,29 +997,29 @@ onUnmounted(() => {
 
         <!-- Custom Mode Setup Controls -->
         <div class="controls" v-if="isDefiningCustom">
-          <button @click="startNewGame">Cancel</button>
+          <button class="game-btn" @click="startNewGame">Cancel</button>
           <div v-if="gameType === 'killer'" class="killer-controls">
-            <button v-if="!isCageSelectionMode" @click="toggleCageSelectionMode">Add Cage</button>
-            <button v-if="!isCageSelectionMode && selectedCell && cages.some(c => c.cells.some(cl => cl.row === selectedCell!.r && cl.col === selectedCell!.c))" @click="deleteCage" class="delete-btn">Delete Cage</button>
+            <button class="game-btn" v-if="!isCageSelectionMode" @click="toggleCageSelectionMode">Add Cage</button>
+            <button class="game-btn delete-btn" v-if="!isCageSelectionMode && selectedCell && cages.some(c => c.cells.some(cl => cl.row === selectedCell!.r && cl.col === selectedCell!.c))" @click="deleteCage">Delete Cage</button>
 
             <div v-if="isCageSelectionMode" class="cage-actions">
               <span class="instruction">Select cells...</span>
-              <button @click="saveCage" class="primary-action" :disabled="currentCageSelection.size === 0">Save Cage</button>
-              <button @click="cancelCageSelection">Cancel Selection</button>
+              <button class="game-btn primary-action" @click="saveCage" :disabled="currentCageSelection.size === 0">Save Cage</button>
+              <button class="game-btn" @click="cancelCageSelection">Cancel Selection</button>
             </div>
           </div>
-          <button v-if="!isCageSelectionMode" class="primary-action" @click="validateAndStartCustom">Start Solving</button>
+          <button class="game-btn primary-action" v-if="!isCageSelectionMode" @click="validateAndStartCustom">Start Solving</button>
         </div>
 
         <!-- Normal Game Controls -->
         <div class="controls" v-else>
-          <button @click="startNewGame" :title="'New Game'">
+          <button class="game-btn" @click="startNewGame" :title="'New Game'">
             <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M12 5v14M5 12h14" />
             </svg>
             <span class="btn-text">New</span>
           </button>
-          <button @click="isPaused ? resumeTimer() : pauseTimer()" :title="isPaused ? 'Resume' : 'Pause'">
+          <button class="game-btn" @click="isPaused ? resumeTimer() : pauseTimer()" :title="isPaused ? 'Resume' : 'Pause'">
             <svg v-if="isPaused" class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
               <path d="M8 5v14l11-7z" />
             </svg>
@@ -1028,20 +1028,20 @@ onUnmounted(() => {
             </svg>
             <span class="btn-text">{{ isPaused ? 'Resume' : 'Pause' }}</span>
           </button>
-          <button @click="undo" :disabled="isPaused || isGameOver" title="Undo">
+          <button class="game-btn" @click="undo" :disabled="isPaused || isGameOver" title="Undo">
             <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M3 10h10a5 5 0 0 1 5 5v2M3 10l5-5M3 10l5 5" />
             </svg>
             <span class="btn-text">Undo</span>
           </button>
-          <button @click="shareGame" title="Share">
+          <button class="game-btn" @click="shareGame" title="Share">
             <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
               <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
             </svg>
             <span class="btn-text">Share</span>
           </button>
-          <button @click="showSolution" class="secondary" title="Show Solution">
+          <button class="game-btn secondary" @click="showSolution" title="Show Solution">
             <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
             </svg>
@@ -1051,6 +1051,7 @@ onUnmounted(() => {
 
         <div class="controls secondary-controls" v-if="!isDefiningCustom">
           <button
+            class="game-btn"
             @click="isNoteMode = !isNoteMode"
             :class="{ 'active': isNoteMode }"
             title="Toggle Candidate Mode (Pencil)"
@@ -1060,20 +1061,20 @@ onUnmounted(() => {
             </svg>
             <span class="btn-text">{{ isNoteMode ? 'Notes ON' : 'Notes' }}</span>
           </button>
-          <button @click="generateCandidates" :class="['fill-notes-btn', { 'hidden-btn': candidatesPopulated }]" title="Populate Candidates">
+          <button class="game-btn" @click="generateCandidates" :class="['fill-notes-btn', { 'hidden-btn': candidatesPopulated }]" title="Populate Candidates">
             <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
               <rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
             </svg>
             <span class="btn-text">Fill Notes</span>
           </button>
-          <button @click="getHint" :disabled="isPaused || isGameOver" :class="['hint-btn', { 'hidden-btn': !candidatesPopulated }]" title="Get Hint">
+          <button class="game-btn" @click="getHint" :disabled="isPaused || isGameOver" :class="['hint-btn', { 'hidden-btn': !candidatesPopulated }]" title="Get Hint">
             <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7z" />
             </svg>
             <span class="btn-text">Hint</span>
           </button>
-          <button @click="generateCandidates" :class="['refresh-btn', { 'hidden-btn': !candidatesPopulated }]" title="Refresh Candidates">
+          <button class="game-btn" @click="generateCandidates" :class="['refresh-btn', { 'hidden-btn': !candidatesPopulated }]" title="Refresh Candidates">
             <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M23 4v6h-6M1 20v-6h6" />
               <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
@@ -1095,10 +1096,10 @@ onUnmounted(() => {
           </div>
           <p class="hint-description">{{ hintResult.description }}</p>
           <div class="hint-actions">
-            <button v-if="hintResult.eliminations.length > 0" @click="applyHint" class="apply-btn">
+            <button class="game-btn apply-btn" v-if="hintResult.eliminations.length > 0" @click="applyHint">
               Apply ({{ hintResult.eliminations.length }} elimination{{ hintResult.eliminations.length > 1 ? 's' : '' }})
             </button>
-            <button @click="dismissHint" class="dismiss-btn">Dismiss</button>
+            <button class="game-btn dismiss-btn" @click="dismissHint">Dismiss</button>
           </div>
         </div>
       </div>
@@ -1374,7 +1375,8 @@ onUnmounted(() => {
     grid-column: span 1;
 }
 
-button {
+/* Game buttons - explicit class for Tailwind v4 specificity */
+button.game-btn {
     padding: 8px 12px;
     font-size: 0.85rem;
     cursor: pointer;
@@ -1389,8 +1391,43 @@ button {
     gap: 6px;
 }
 
-button:hover {
+button.game-btn:hover {
     background-color: #3aa876 !important;
+}
+
+button.game-btn:disabled {
+    background-color: #9ca3af !important;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+/* Number pad buttons */
+button.pad-btn {
+    padding: 12px;
+    font-size: 1.2rem;
+    font-weight: bold;
+    cursor: pointer;
+    background-color: #42b983 !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 4px !important;
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+button.pad-btn:hover {
+    background-color: #3aa876 !important;
+}
+
+button.pad-btn.clear-btn {
+    background-color: #e74c3c !important;
+}
+
+button.pad-btn.clear-btn:hover {
+    background-color: #c0392b !important;
 }
 
 .btn-icon {
@@ -1403,12 +1440,12 @@ button:hover {
     white-space: nowrap;
 }
 
-button.primary-action {
-    background-color: #34495e;
+button.game-btn.primary-action {
+    background-color: #34495e !important;
     font-weight: bold;
 }
-button.primary-action:hover {
-    background-color: #2c3e50;
+button.game-btn.primary-action:hover {
+    background-color: #2c3e50 !important;
 }
 
 select.difficulty-select {
@@ -1425,16 +1462,16 @@ select.difficulty-select:hover {
     background-color: #2c3e50;
 }
 
-button.secondary {
-    background-color: #e67e22;
+button.game-btn.secondary {
+    background-color: #e67e22 !important;
 }
-button.secondary:hover {
-    background-color: #d35400;
+button.game-btn.secondary:hover {
+    background-color: #d35400 !important;
 }
 
-button.active {
-    background-color: #34495e;
-    border: 2px solid #dad4f6;
+button.game-btn.active {
+    background-color: #34495e !important;
+    border: 2px solid #dad4f6 !important;
 }
 
 .feedback-area {
