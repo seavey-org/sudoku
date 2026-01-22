@@ -1028,7 +1028,7 @@ onUnmounted(() => {
         </div>
 
         <!-- Normal Game Controls -->
-        <div class="controls" v-else>
+        <div class="controls primary-controls" v-else>
           <button class="game-btn" @click="startNewGame" :title="'New Game'">
             <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M12 5v14M5 12h14" />
@@ -1384,23 +1384,34 @@ onUnmounted(() => {
     max-width: 450px;
 }
 
+/* Base controls: flexbox for variable content (custom mode) */
 .controls {
     display: flex;
-    gap: 10px;
+    gap: 8px;
     justify-content: center;
-    flex-wrap: wrap; /* Handle smaller screens */
+    flex-wrap: wrap;
 }
 
+/* Primary controls: fixed 5-button grid for consistent sizing */
+.controls.primary-controls {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+}
+
+/* Secondary controls row: 4-column grid with dynamic spans */
 .secondary-controls {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 10px;
+    gap: 8px;
 }
 
+/* Before candidates are populated: Notes (1) + Fill Notes (3) = 4 cols */
 .secondary-controls .fill-notes-btn {
     grid-column: span 3;
 }
 
+/* After candidates populated: Notes (1) + Hint (2) + Refresh (1) = 4 cols */
 .secondary-controls .hint-btn {
     grid-column: span 2;
 }
@@ -1580,14 +1591,14 @@ button.game-btn.active {
 
 .killer-controls {
     display: flex;
-    gap: 10px;
+    gap: 8px;
     align-items: center;
     flex-wrap: wrap;
 }
 
 .cage-actions {
     display: flex;
-    gap: 5px;
+    gap: 8px;
     align-items: center;
 }
 
@@ -1737,6 +1748,11 @@ button.game-btn.active {
     }
 
     .controls {
+        gap: 4px;
+    }
+
+    .controls.primary-controls {
+        grid-template-columns: repeat(5, 1fr);
         gap: 4px;
     }
 
