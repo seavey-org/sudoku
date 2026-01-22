@@ -1210,6 +1210,10 @@ onUnmounted(() => {
   background-color: white;
   border: 1px solid #ccc;
   box-sizing: border-box;
+  /* Center children (for overlays that aren't absolutely positioned) */
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 :where(.dark, .dark *) .cell {
@@ -1269,22 +1273,32 @@ onUnmounted(() => {
     border-radius: 2px;
 }
 
-/* Input Styling */
+/* Input Styling 
+ * Absolute positioning fills the cell, line-height matches height for vertical centering.
+ * The 100cqh trick: container query units relative to the cell's inline size (which equals 
+ * height due to aspect-ratio: 1). This ensures text is vertically centered regardless of 
+ * actual cell pixel size.
+ */
 .value-input {
-  width: 100%;
-  height: 100%;
-  text-align: center;
-  font-size: 1.5rem;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: #007bff;
-  font-weight: normal;
   position: absolute;
   top: 0;
   left: 0;
+  width: 100%;
+  height: 100%;
+  text-align: center;
+  line-height: 1; /* Let natural line-height handle vertical centering */
+  padding: 0;
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: normal;
+  color: #007bff;
+  border: none;
+  outline: none;
+  background: transparent;
   z-index: 10;
   cursor: default;
+  /* Ensure text baseline is centered within input */
+  vertical-align: middle;
 }
 
 .value-input.hidden {
