@@ -1164,7 +1164,7 @@ onUnmounted(() => {
     color: #dad4f6;
 }
 
-/* Grid Layout - using Flexbox for rows + cells */
+/* Grid Layout - Grid container is square via aspect-ratio, rows/cells fill it */
 .grid {
   --grid-max-size: 450px;
   display: flex;
@@ -1172,6 +1172,7 @@ onUnmounted(() => {
   position: relative;
   width: 100%;
   max-width: var(--grid-max-size);
+  aspect-ratio: 1; /* Make grid square - this is the key! */
   background-color: #000;
   border: 3px solid #000;
   margin-bottom: 20px;
@@ -1201,16 +1202,18 @@ onUnmounted(() => {
 .row {
   display: flex;
   flex-direction: row;
+  flex: 1; /* Rows fill grid height equally */
+  min-height: 0; /* Allow shrinking */
 }
 
 .cell {
-  flex: 1;
-  aspect-ratio: 1;
+  flex: 1; /* Cells fill row width equally */
+  min-width: 0; /* Allow shrinking */
   position: relative;
   background-color: white;
   border: 1px solid #ccc;
   box-sizing: border-box;
-  /* Center children (for overlays that aren't absolutely positioned) */
+  /* Center children */
   display: flex;
   justify-content: center;
   align-items: center;
