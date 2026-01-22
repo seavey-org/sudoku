@@ -1,0 +1,15 @@
+# Local development override
+# Usage: docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sudoku-app:local
+
+  extraction:
+    build:
+      context: ./extraction_service
+      dockerfile: Dockerfile
+    image: sudoku-extraction:local

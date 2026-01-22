@@ -253,7 +253,7 @@ const loadGame = (): boolean => {
             }
             return true
         } catch (e) {
-            console.error("Failed to load game state", e)
+            console.error('Failed to load game state', e)
             return false
         }
     }
@@ -331,10 +331,10 @@ const shareGame = () => {
         if (isDefiningCustom.value) {
              // Note: Solution might not exist yet, so import will need to solve it or we block sharing until solved?
              // Ideally block until solved to ensure validity.
-             message.value = "Please solve/validate the puzzle before sharing."
+             message.value = 'Please solve/validate the puzzle before sharing.'
              return
         }
-        message.value = "Cannot share this puzzle."
+        message.value = 'Cannot share this puzzle.'
         return
     }
     
@@ -350,11 +350,11 @@ const shareGame = () => {
     const url = `${window.location.origin}/?import=${base64}`
     
     navigator.clipboard.writeText(url).then(() => {
-        message.value = "Link copied to clipboard!"
-        setTimeout(() => message.value = "", 3000)
+        message.value = 'Link copied to clipboard!'
+        setTimeout(() => message.value = '', 3000)
     }).catch(err => {
         console.error('Failed to copy text: ', err)
-        message.value = "Failed to copy link."
+        message.value = 'Failed to copy link.'
     })
 }
 
@@ -494,7 +494,7 @@ const checkSolution = () => {
             size: props.size,
             gameType: props.gameType || 'standard'
         })
-    }).catch(e => console.error("Failed to report completion", e))
+    }).catch(e => console.error('Failed to report completion', e))
 
     // Notify parent
     emit('puzzle-completed', { board: board.value })
@@ -591,12 +591,12 @@ const onCellClickInCageMode = (r: number, c: number) => {
 const saveCage = () => {
     if (currentCageSelection.value.size === 0) return
 
-    const sumStr = prompt("Enter sum for this cage:")
+    const sumStr = prompt('Enter sum for this cage:')
     if (!sumStr) return
 
     const sum = parseInt(sumStr)
     if (isNaN(sum)) {
-        alert("Invalid sum")
+        alert('Invalid sum')
         return
     }
 
@@ -915,193 +915,193 @@ onUnmounted(() => {
     <div v-if="loading" class="loading">Generating Puzzle...</div>
     
     <div v-else class="game-area">
-        <div class="header-status" v-if="isDefiningCustom">
-            <h3>Enter Your Puzzle</h3>
-            <p>Fill in the initial numbers.</p>
-        </div>
+      <div class="header-status" v-if="isDefiningCustom">
+        <h3>Enter Your Puzzle</h3>
+        <p>Fill in the initial numbers.</p>
+      </div>
 
-        <div class="timer-display" v-else>
-            {{ formatTime(timer) }}
-        </div>
+      <div class="timer-display" v-else>
+        {{ formatTime(timer) }}
+      </div>
 
-        <div class="grid" :class="`size-${size}`">
-            <div class="paused-overlay" v-if="isPaused">
-                <h2>PAUSED</h2>
-                <button class="primary-action" @click="resumeTimer">Resume</button>
-            </div>
+      <div class="grid" :class="`size-${size}`">
+        <div class="paused-overlay" v-if="isPaused">
+          <h2>PAUSED</h2>
+          <button class="primary-action" @click="resumeTimer">Resume</button>
+        </div>
         <div v-for="(row, rIndex) in board" :key="rIndex" class="row">
-            <div
-                v-for="(cell, cIndex) in row"
-                :key="cIndex"
-                class="cell"
-                :class="[
-                    getCageStyle(rIndex, cIndex),
-                    { 'cage-selected': currentCageSelection.has(`${rIndex},${cIndex}`) },
-                    getHintHighlightClass(rIndex, cIndex)
-                ]"
-                @click="onCellClickInCageMode(rIndex, cIndex)"
-            >
-                <div v-if="getCageSum(rIndex, cIndex)" class="cage-sum">{{ getCageSum(rIndex, cIndex) }}</div>
-                <!-- Main Value Input -->
-                <input 
-                    type="text"
-                    inputmode="numeric"
-                    :value="cell"
-                    :readonly="isMobile || isCageSelectionMode"
-                    @focus="onFocus(rIndex, cIndex)"
-                    @keydown="handleKeydown($event, rIndex, cIndex)"
-                    @input="handleInput($event, rIndex, cIndex)"
-                    autocomplete="off"
-                    class="value-input"
-                    :class="{
-                        'hidden': cell === null,
-                        'fixed': isFixed[rIndex]![cIndex] || isDefiningCustom,
-                        'pointer-events-none': isCageSelectionMode
-                    }"
-                />
+          <div
+            v-for="(cell, cIndex) in row"
+            :key="cIndex"
+            class="cell"
+            :class="[
+              getCageStyle(rIndex, cIndex),
+              { 'cage-selected': currentCageSelection.has(`${rIndex},${cIndex}`) },
+              getHintHighlightClass(rIndex, cIndex)
+            ]"
+            @click="onCellClickInCageMode(rIndex, cIndex)"
+          >
+            <div v-if="getCageSum(rIndex, cIndex)" class="cage-sum">{{ getCageSum(rIndex, cIndex) }}</div>
+            <!-- Main Value Input -->
+            <input 
+              type="text"
+              inputmode="numeric"
+              :value="cell"
+              :readonly="isMobile || isCageSelectionMode"
+              @focus="onFocus(rIndex, cIndex)"
+              @keydown="handleKeydown($event, rIndex, cIndex)"
+              @input="handleInput($event, rIndex, cIndex)"
+              autocomplete="off"
+              class="value-input"
+              :class="{
+                'hidden': cell === null,
+                'fixed': isFixed[rIndex]![cIndex] || isDefiningCustom,
+                'pointer-events-none': isCageSelectionMode
+              }"
+            />
                 
-                <!-- Incorrect Mark (Red X) -->
-                <div v-if="!isDefiningCustom && !isFixed[rIndex]![cIndex] && cell !== null && cell !== solution[rIndex]![cIndex]" class="incorrect-mark">
-                    X
-                </div>
-
-                <!-- Candidates Overlay -->
-                <div v-if="!isDefiningCustom && cell === null && candidates[rIndex]![cIndex]!.length > 0" class="candidates-grid" :class="[`size-${size}`, { 'killer-mode': gameType === 'killer' }]">
-                    <div
-                        v-for="num in size"
-                        :key="num"
-                        class="candidate-cell"
-                        :class="getCandidateHighlightClass(rIndex, cIndex, num)"
-                    >
-                        {{ candidates[rIndex]![cIndex]!.includes(num) ? num : '' }}
-                    </div>
-                </div>
+            <!-- Incorrect Mark (Red X) -->
+            <div v-if="!isDefiningCustom && !isFixed[rIndex]![cIndex] && cell !== null && cell !== solution[rIndex]![cIndex]" class="incorrect-mark">
+              X
             </div>
+
+            <!-- Candidates Overlay -->
+            <div v-if="!isDefiningCustom && cell === null && candidates[rIndex]![cIndex]!.length > 0" class="candidates-grid" :class="[`size-${size}`, { 'killer-mode': gameType === 'killer' }]">
+              <div
+                v-for="num in size"
+                :key="num"
+                class="candidate-cell"
+                :class="getCandidateHighlightClass(rIndex, cIndex, num)"
+              >
+                {{ candidates[rIndex]![cIndex]!.includes(num) ? num : '' }}
+              </div>
+            </div>
+          </div>
         </div>
-        </div>
+      </div>
 
-        <div class="controls-container">
-            <!-- Mobile Number Pad -->
-            <div class="number-pad" v-if="isMobile">
-                <button
-                    v-for="n in 9"
-                    :key="n"
-                    class="pad-btn"
-                    @mousedown.prevent
-                    @click="onPadInput(n)"
-                >
-                    {{ n }}
-                </button>
-                <button class="pad-btn clear-btn" @mousedown.prevent @click="onPadClear">X</button>
-            </div>
-
-            <!-- Custom Mode Setup Controls -->
-            <div class="controls" v-if="isDefiningCustom">
-                <button @click="startNewGame">Cancel</button>
-                <div v-if="gameType === 'killer'" class="killer-controls">
-                     <button v-if="!isCageSelectionMode" @click="toggleCageSelectionMode">Add Cage</button>
-                     <button v-if="!isCageSelectionMode && selectedCell && cages.some(c => c.cells.some(cl => cl.row === selectedCell!.r && cl.col === selectedCell!.c))" @click="deleteCage" class="delete-btn">Delete Cage</button>
-
-                     <div v-if="isCageSelectionMode" class="cage-actions">
-                        <span class="instruction">Select cells...</span>
-                        <button @click="saveCage" class="primary-action" :disabled="currentCageSelection.size === 0">Save Cage</button>
-                        <button @click="cancelCageSelection">Cancel Selection</button>
-                     </div>
-                </div>
-                <button v-if="!isCageSelectionMode" class="primary-action" @click="validateAndStartCustom">Start Solving</button>
-            </div>
-
-            <!-- Normal Game Controls -->
-            <div class="controls" v-else>
-                <button @click="startNewGame" :title="'New Game'">
-                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M12 5v14M5 12h14"/>
-                    </svg>
-                    <span class="btn-text">New</span>
-                </button>
-                <button @click="isPaused ? resumeTimer() : pauseTimer()" :title="isPaused ? 'Resume' : 'Pause'">
-                    <svg v-if="isPaused" class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M8 5v14l11-7z"/>
-                    </svg>
-                    <svg v-else class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
-                        <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
-                    </svg>
-                    <span class="btn-text">{{ isPaused ? 'Resume' : 'Pause' }}</span>
-                </button>
-                <button @click="undo" :disabled="isPaused || isGameOver" title="Undo">
-                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M3 10h10a5 5 0 0 1 5 5v2M3 10l5-5M3 10l5 5"/>
-                    </svg>
-                    <span class="btn-text">Undo</span>
-                </button>
-                <button @click="shareGame" title="Share">
-                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-                        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-                    </svg>
-                    <span class="btn-text">Share</span>
-                </button>
-                <button @click="showSolution" class="secondary" title="Show Solution">
-                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-                    </svg>
-                    <span class="btn-text">Solve</span>
-                </button>
-            </div>
-
-            <div class="controls secondary-controls" v-if="!isDefiningCustom">
-                <button
-                    @click="isNoteMode = !isNoteMode"
-                    :class="{ 'active': isNoteMode }"
-                    title="Toggle Candidate Mode (Pencil)"
-                >
-                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
-                    </svg>
-                    <span class="btn-text">{{ isNoteMode ? 'Notes ON' : 'Notes' }}</span>
-                </button>
-                <button @click="generateCandidates" :class="['fill-notes-btn', { 'hidden-btn': candidatesPopulated }]" title="Populate Candidates">
-                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
-                        <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
-                    </svg>
-                    <span class="btn-text">Fill Notes</span>
-                </button>
-                <button @click="getHint" :disabled="isPaused || isGameOver" :class="['hint-btn', { 'hidden-btn': !candidatesPopulated }]" title="Get Hint">
-                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7z"/>
-                    </svg>
-                    <span class="btn-text">Hint</span>
-                </button>
-                <button @click="generateCandidates" :class="['refresh-btn', { 'hidden-btn': !candidatesPopulated }]" title="Refresh Candidates">
-                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M23 4v6h-6M1 20v-6h6"/>
-                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-                    </svg>
-                    <span class="btn-text">Refresh</span>
-                </button>
-            </div>
+      <div class="controls-container">
+        <!-- Mobile Number Pad -->
+        <div class="number-pad" v-if="isMobile">
+          <button
+            v-for="n in 9"
+            :key="n"
+            class="pad-btn"
+            @mousedown.prevent
+            @click="onPadInput(n)"
+          >
+            {{ n }}
+          </button>
+          <button class="pad-btn clear-btn" @mousedown.prevent @click="onPadClear">X</button>
         </div>
 
-        <!-- Feedback area - stable container for messages and hints -->
-        <div class="feedback-area">
-            <div v-if="message" class="message">{{ message }}</div>
+        <!-- Custom Mode Setup Controls -->
+        <div class="controls" v-if="isDefiningCustom">
+          <button @click="startNewGame">Cancel</button>
+          <div v-if="gameType === 'killer'" class="killer-controls">
+            <button v-if="!isCageSelectionMode" @click="toggleCageSelectionMode">Add Cage</button>
+            <button v-if="!isCageSelectionMode && selectedCell && cages.some(c => c.cells.some(cl => cl.row === selectedCell!.r && cl.col === selectedCell!.c))" @click="deleteCage" class="delete-btn">Delete Cage</button>
 
-            <!-- Hint Panel -->
-            <div v-if="hintResult" class="hint-panel">
-            <div class="hint-header">
-                <strong>{{ hintResult.strategyName }}</strong>
-                <span class="hint-difficulty">(Difficulty: {{ hintResult.difficulty.toFixed(1) }})</span>
+            <div v-if="isCageSelectionMode" class="cage-actions">
+              <span class="instruction">Select cells...</span>
+              <button @click="saveCage" class="primary-action" :disabled="currentCageSelection.size === 0">Save Cage</button>
+              <button @click="cancelCageSelection">Cancel Selection</button>
             </div>
-            <p class="hint-description">{{ hintResult.description }}</p>
-            <div class="hint-actions">
-                <button v-if="hintResult.eliminations.length > 0" @click="applyHint" class="apply-btn">
-                    Apply ({{ hintResult.eliminations.length }} elimination{{ hintResult.eliminations.length > 1 ? 's' : '' }})
-                </button>
-                <button @click="dismissHint" class="dismiss-btn">Dismiss</button>
-            </div>
-            </div>
+          </div>
+          <button v-if="!isCageSelectionMode" class="primary-action" @click="validateAndStartCustom">Start Solving</button>
         </div>
+
+        <!-- Normal Game Controls -->
+        <div class="controls" v-else>
+          <button @click="startNewGame" :title="'New Game'">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            <span class="btn-text">New</span>
+          </button>
+          <button @click="isPaused ? resumeTimer() : pauseTimer()" :title="isPaused ? 'Resume' : 'Pause'">
+            <svg v-if="isPaused" class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+            <svg v-else class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" />
+            </svg>
+            <span class="btn-text">{{ isPaused ? 'Resume' : 'Pause' }}</span>
+          </button>
+          <button @click="undo" :disabled="isPaused || isGameOver" title="Undo">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 10h10a5 5 0 0 1 5 5v2M3 10l5-5M3 10l5 5" />
+            </svg>
+            <span class="btn-text">Undo</span>
+          </button>
+          <button @click="shareGame" title="Share">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+            </svg>
+            <span class="btn-text">Share</span>
+          </button>
+          <button @click="showSolution" class="secondary" title="Show Solution">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+            </svg>
+            <span class="btn-text">Solve</span>
+          </button>
+        </div>
+
+        <div class="controls secondary-controls" v-if="!isDefiningCustom">
+          <button
+            @click="isNoteMode = !isNoteMode"
+            :class="{ 'active': isNoteMode }"
+            title="Toggle Candidate Mode (Pencil)"
+          >
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+            </svg>
+            <span class="btn-text">{{ isNoteMode ? 'Notes ON' : 'Notes' }}</span>
+          </button>
+          <button @click="generateCandidates" :class="['fill-notes-btn', { 'hidden-btn': candidatesPopulated }]" title="Populate Candidates">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
+              <rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
+            </svg>
+            <span class="btn-text">Fill Notes</span>
+          </button>
+          <button @click="getHint" :disabled="isPaused || isGameOver" :class="['hint-btn', { 'hidden-btn': !candidatesPopulated }]" title="Get Hint">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7z" />
+            </svg>
+            <span class="btn-text">Hint</span>
+          </button>
+          <button @click="generateCandidates" :class="['refresh-btn', { 'hidden-btn': !candidatesPopulated }]" title="Refresh Candidates">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 4v6h-6M1 20v-6h6" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+            <span class="btn-text">Refresh</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Feedback area - stable container for messages and hints -->
+      <div class="feedback-area">
+        <div v-if="message" class="message">{{ message }}</div>
+
+        <!-- Hint Panel -->
+        <div v-if="hintResult" class="hint-panel">
+          <div class="hint-header">
+            <strong>{{ hintResult.strategyName }}</strong>
+            <span class="hint-difficulty">(Difficulty: {{ hintResult.difficulty.toFixed(1) }})</span>
+          </div>
+          <p class="hint-description">{{ hintResult.description }}</p>
+          <div class="hint-actions">
+            <button v-if="hintResult.eliminations.length > 0" @click="applyHint" class="apply-btn">
+              Apply ({{ hintResult.eliminations.length }} elimination{{ hintResult.eliminations.length > 1 ? 's' : '' }})
+            </button>
+            <button @click="dismissHint" class="dismiss-btn">Dismiss</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -1140,6 +1140,11 @@ onUnmounted(() => {
   position: relative;
 }
 
+:where(.dark, .dark *) .grid {
+  background-color: #1f2937;
+  border-color: #374151;
+}
+
 .paused-overlay {
     position: absolute;
     top: 0;
@@ -1165,6 +1170,11 @@ onUnmounted(() => {
   position: relative;
   border: 1px solid #ccc;
   box-sizing: border-box;
+}
+
+:where(.dark, .dark *) .cell {
+  background-color: #f3f4f6;
+  border-color: #9ca3af;
 }
 
 /* Borders for 9x9 */
@@ -1801,5 +1811,37 @@ button.active {
     .btn-text {
         font-size: 0.8rem;
     }
+}
+
+/* Dark mode overrides */
+:where(.dark, .dark *) .pad-btn {
+    background-color: #374151;
+    color: #f3f4f6;
+    border-color: #4b5563;
+}
+
+:where(.dark, .dark *) .pad-btn:active {
+    background-color: #4b5563;
+}
+
+:where(.dark, .dark *) .clear-btn {
+    background-color: #7f1d1d;
+    color: #fecaca;
+}
+
+:where(.dark, .dark *) .cage-sum {
+    background-color: #e5e7eb;
+}
+
+:where(.dark, .dark *) .value-input {
+    color: #2563eb;
+}
+
+:where(.dark, .dark *) .value-input.fixed {
+    color: #111827;
+}
+
+:where(.dark, .dark *) .candidate-cell {
+    color: #6b7280;
 }
 </style>

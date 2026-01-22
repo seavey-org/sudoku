@@ -90,9 +90,9 @@ func Solve(initialBoard Grid, size int) (Grid, bool) {
 		countGrid[i] = make([]int, gen.N)
 		copy(countGrid[i], workingBoard[i])
 	}
-	
+
 	gen.solveCount(countGrid, &count)
-	
+
 	if count == 0 {
 		return nil, false // No solution
 	}
@@ -260,7 +260,7 @@ func GenerateKiller(difficulty string, size int) Puzzle {
 	default: // medium
 		holes = gen.getHolesCount("hard")
 	}
-	
+
 	gen.removeDigitsKiller(board, holes)
 
 	return Puzzle{
@@ -702,7 +702,7 @@ func (gen *Generator) isSafeKiller(g Grid, row, col, num int) bool {
 		}
 	} else {
 		// Optimization: Check if remaining sum is achievable with remaining distinct numbers
-		
+
 		// 1. Minimum possible sum check
 		minSum := 0
 		count := 0

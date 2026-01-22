@@ -56,8 +56,8 @@ const processFile = async (file: File) => {
             size.value = 9
         }
     } catch (e: any) {
-        console.error("Upload error:", e)
-        errorMsg.value = "Failed to process image. Please try again."
+        console.error('Upload error:', e)
+        errorMsg.value = 'Failed to process image. Please try again.'
     } finally {
         isLoading.value = false
     }
@@ -99,421 +99,129 @@ const handleDrop = async (event: DragEvent) => {
 </script>
 
 <template>
-  <div class="landing-container">
-    <div class="card">
-        <h2>New Game Settings</h2>
+  <div class="flex justify-center items-center h-full w-full px-2 box-border">
+    <div class="bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-lg shadow-md text-gray-800 dark:text-gray-100 flex flex-col gap-3 sm:gap-4 w-full max-w-md box-border">
+      <h2 class="m-0 text-center text-gray-700 dark:text-gray-200 text-xl sm:text-2xl font-semibold">New Game Settings</h2>
         
-        <div class="setting-group">
-            <label>Game Type:</label>
-            <div class="options">
-                <button
-                    :class="{ active: gameType === 'standard' }"
-                    @click="gameType = 'standard'"
-                >
-                    Standard
-                </button>
-                <button
-                    :class="{ active: gameType === 'killer' }"
-                    @click="gameType = 'killer'"
-                >
-                    Killer Sudoku
-                </button>
-            </div>
+      <div class="flex flex-col gap-1">
+        <label class="font-bold text-sm">Game Type:</label>
+        <div class="flex gap-1">
+          <button
+            class="flex-1 py-2 px-1 border rounded transition-all text-sm min-h-11 touch-manipulation"
+            :class="gameType === 'standard' 
+              ? 'bg-green-500 text-white border-green-500 font-bold' 
+              : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'"
+            @click="gameType = 'standard'"
+          >
+            Standard
+          </button>
+          <button
+            class="flex-1 py-2 px-1 border rounded transition-all text-sm min-h-11 touch-manipulation"
+            :class="gameType === 'killer' 
+              ? 'bg-green-500 text-white border-green-500 font-bold' 
+              : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'"
+            @click="gameType = 'killer'"
+          >
+            Killer Sudoku
+          </button>
         </div>
+      </div>
 
-        <div class="setting-group">
-            <label>Grid Size:</label>
-            <div class="options">
-                <button 
-                    :class="{ active: size === 9 }" 
-                    @click="size = 9"
-                >
-                    Standard (9x9)
-                </button>
-                <button 
-                    :class="{ active: size === 6 }" 
-                    @click="size = 6"
-                >
-                    Mini (6x6)
-                </button>
-            </div>
+      <div class="flex flex-col gap-1">
+        <label class="font-bold text-sm">Grid Size:</label>
+        <div class="flex gap-1">
+          <button 
+            class="flex-1 py-2 px-1 border rounded transition-all text-sm min-h-11 touch-manipulation"
+            :class="size === 9 
+              ? 'bg-green-500 text-white border-green-500 font-bold' 
+              : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'"
+            @click="size = 9"
+          >
+            Standard (9x9)
+          </button>
+          <button 
+            class="flex-1 py-2 px-1 border rounded transition-all text-sm min-h-11 touch-manipulation"
+            :class="size === 6 
+              ? 'bg-green-500 text-white border-green-500 font-bold' 
+              : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'"
+            @click="size = 6"
+          >
+            Mini (6x6)
+          </button>
         </div>
+      </div>
 
-        <div class="setting-group">
-            <label>Difficulty:</label>
-            <div class="options difficulty-options">
-                <button
-                    :class="{ active: difficulty === 'easy' }"
-                    @click="difficulty = 'easy'"
-                    title="Solvable with basic techniques only (singles)"
-                >
-                    Easy
-                </button>
-                <button
-                    :class="{ active: difficulty === 'medium' }"
-                    @click="difficulty = 'medium'"
-                    title="May require pairs and pointing techniques"
-                >
-                    Medium
-                </button>
-                <button
-                    :class="{ active: difficulty === 'hard' }"
-                    @click="difficulty = 'hard'"
-                    title="Requires intermediate techniques (X-Wing, Swordfish)"
-                >
-                    Hard
-                </button>
-                <button
-                    :class="{ active: difficulty === 'extreme' }"
-                    @click="difficulty = 'extreme'"
-                    title="Requires advanced techniques (Y-Wing, Skyscraper)"
-                >
-                    Extreme
-                </button>
-                <button
-                    :class="{ active: difficulty === 'insane' }"
-                    @click="difficulty = 'insane'"
-                    title="Requires multiple of the hardest techniques"
-                >
-                    Insane
-                </button>
-            </div>
+      <div class="flex flex-col gap-1">
+        <label class="font-bold text-sm">Difficulty:</label>
+        <div class="flex flex-wrap gap-1">
+          <button
+            v-for="diff in ['easy', 'medium', 'hard', 'extreme', 'insane']"
+            :key="diff"
+            class="py-2 px-1 border rounded transition-all text-xs sm:text-sm min-h-10 touch-manipulation"
+            :class="[
+              difficulty === diff 
+                ? 'bg-green-500 text-white border-green-500 font-bold' 
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600',
+              diff === 'extreme' || diff === 'insane' ? 'flex-1 basis-[calc(50%-0.125rem)]' : 'flex-1 basis-[calc(33.33%-0.25rem)]'
+            ]"
+            @click="difficulty = diff"
+          >
+            {{ diff.charAt(0).toUpperCase() + diff.slice(1) }}
+          </button>
         </div>
+      </div>
 
-        <div class="buttons">
-            <button class="start-btn" @click="startGame">Start Game</button>
-            <button
-                class="custom-btn"
-                @click="emit('create-custom', { size, gameType })"
-            >
-                Create Custom
-            </button>
-        </div>
-
-        <div
-            class="upload-section"
-            :class="{ 'drag-over': isDragging }"
-            @dragover="handleDragOver"
-            @dragleave="handleDragLeave"
-            @drop="handleDrop"
+      <div class="flex gap-3 mt-2">
+        <button 
+          class="flex-1 py-3 px-2 text-white text-base border-none rounded cursor-pointer min-h-12 touch-manipulation bg-gray-700 dark:bg-gray-600 hover:bg-gray-800 dark:hover:bg-gray-500"
+          @click="startGame"
         >
-            <input
-                type="file"
-                ref="fileInput"
-                accept="image/jpeg, image/png, image/webp"
-                @change="handleFileUpload"
-                style="display: none"
-            />
-            <div class="drop-zone" @click="triggerUpload">
-                <div v-if="isLoading" class="upload-status">Processing...</div>
-                <div v-else-if="isDragging" class="upload-status">Drop image here</div>
-                <div v-else class="upload-prompt">
-                    <span class="upload-icon">+</span>
-                    <span>Drop image here or click to upload</span>
-                </div>
-            </div>
-            <div v-if="errorMsg" class="error-msg">{{ errorMsg }}</div>
-        </div>
+          Start Game
+        </button>
+        <button
+          class="flex-1 py-3 px-2 text-white text-base border-none rounded cursor-pointer min-h-12 touch-manipulation bg-orange-500 hover:bg-orange-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          @click="emit('create-custom', { size, gameType })"
+        >
+          Create Custom
+        </button>
+      </div>
 
-        <button class="stats-btn" @click="emit('view-stats')">View Global Stats</button>
+      <div
+        class="w-full mt-1"
+        @dragover="handleDragOver"
+        @dragleave="handleDragLeave"
+        @drop="handleDrop"
+      >
+        <input
+          type="file"
+          ref="fileInput"
+          accept="image/jpeg, image/png, image/webp"
+          @change="handleFileUpload"
+          class="hidden"
+        />
+        <div 
+          class="w-full p-3 rounded cursor-pointer text-center transition-all box-border min-h-12 flex items-center justify-center border-2 border-dashed"
+          :class="isDragging 
+            ? 'bg-purple-200 dark:bg-purple-900 border-purple-700 dark:border-purple-400 border-solid' 
+            : 'bg-purple-50 dark:bg-purple-900/30 border-purple-500 dark:border-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/50'"
+          @click="triggerUpload"
+        >
+          <div v-if="isLoading" class="text-purple-600 dark:text-purple-300 font-medium text-sm">Processing...</div>
+          <div v-else-if="isDragging" class="text-purple-600 dark:text-purple-300 font-medium text-sm">Drop image here</div>
+          <div v-else class="flex items-center justify-center gap-2 text-purple-600 dark:text-purple-300 text-sm">
+            <span class="text-lg font-bold">+</span>
+            <span>Drop image here or click to upload</span>
+          </div>
+        </div>
+        <div v-if="errorMsg" class="text-red-500 text-xs mt-1 text-center">{{ errorMsg }}</div>
+      </div>
+
+      <button 
+        class="mt-2 py-3 px-4 bg-transparent text-gray-700 dark:text-gray-300 border border-gray-600 dark:border-gray-500 rounded cursor-pointer text-sm w-full min-h-11 touch-manipulation hover:bg-gray-100 dark:hover:bg-gray-700"
+        @click="emit('view-stats')"
+      >
+        View Global Stats
+      </button>
     </div>
   </div>
 </template>
-
-<style scoped>
-.landing-container {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 100%;
-    width: 100%;
-    padding: 0 0.5rem;
-    box-sizing: border-box;
-}
-
-.card {
-    background: #fff;
-    padding: 1.5rem;
-    border-radius: 8px;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    color: #333;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    width: 100%;
-    max-width: 400px;
-    box-sizing: border-box;
-}
-
-h2 {
-    margin: 0;
-    text-align: center;
-    color: #2c3e50;
-    font-size: 1.3rem;
-}
-
-.setting-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-}
-
-label {
-    font-weight: bold;
-    font-size: 0.85rem;
-}
-
-.options {
-    display: flex;
-    gap: 0.4rem;
-}
-
-.options button {
-    flex: 1;
-    padding: 0.5rem 0.25rem;
-    border: 1px solid #ccc;
-    background: #f8f9fa;
-    color: #333;
-    cursor: pointer;
-    border-radius: 4px;
-    transition: all 0.2s;
-    font-size: 0.85rem;
-    min-height: 44px;
-    touch-action: manipulation;
-}
-
-.options button.active {
-    background: #42b983;
-    color: white;
-    border-color: #42b983;
-    font-weight: bold;
-}
-
-.difficulty-options {
-    flex-wrap: wrap;
-}
-
-.difficulty-options button {
-    flex: 0 1 calc(33.33% - 0.3rem);
-    min-width: 0;
-    font-size: 0.8rem;
-    padding: 0.4rem 0.2rem;
-}
-
-.difficulty-options button:nth-child(4),
-.difficulty-options button:nth-child(5) {
-    flex: 0 1 calc(50% - 0.2rem);
-    margin-top: 0.4rem;
-}
-
-.buttons {
-    display: flex;
-    gap: 0.75rem;
-    margin-top: 0.5rem;
-}
-
-.start-btn, .custom-btn {
-    flex: 1;
-    padding: 0.85rem 0.5rem;
-    color: white;
-    font-size: 1rem;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    min-height: 48px;
-    touch-action: manipulation;
-}
-
-.start-btn {
-    background: #34495e;
-}
-.start-btn:hover {
-    background: #2c3e50;
-}
-
-.custom-btn {
-    background: #e67e22;
-}
-.custom-btn:hover {
-    background: #d35400;
-}
-.custom-btn:disabled {
-    background: #95a5a6;
-    cursor: not-allowed;
-}
-.custom-btn:disabled:hover {
-    background: #95a5a6;
-}
-
-.upload-section {
-    width: 100%;
-    margin-top: 0.25rem;
-}
-
-.drop-zone {
-    width: 100%;
-    padding: 0.6rem;
-    background: #f8f4fa;
-    border: 2px dashed #8e44ad;
-    border-radius: 4px;
-    cursor: pointer;
-    text-align: center;
-    transition: all 0.2s ease;
-    box-sizing: border-box;
-    min-height: 48px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.drop-zone:hover {
-    background: #f0e6f4;
-    border-color: #732d91;
-}
-
-.upload-section.drag-over .drop-zone {
-    background: #e8d8f0;
-    border-color: #5b2575;
-    border-style: solid;
-}
-
-.upload-prompt {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    color: #8e44ad;
-    font-size: 0.9rem;
-}
-
-.upload-icon {
-    font-size: 1.1rem;
-    font-weight: bold;
-    line-height: 1;
-}
-
-.upload-status {
-    color: #8e44ad;
-    font-weight: 500;
-    font-size: 0.9rem;
-}
-
-.error-msg {
-    color: #e74c3c;
-    font-size: 0.8rem;
-    margin-top: 0.4rem;
-    text-align: center;
-}
-
-.stats-btn {
-    margin-top: 0.5rem;
-    padding: 0.7rem;
-    background: transparent;
-    color: #34495e;
-    border: 1px solid #34495e;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.85rem;
-    width: 100%;
-    min-height: 44px;
-    touch-action: manipulation;
-}
-
-.stats-btn:hover {
-    background: #f0f0f0;
-}
-
-/* Mobile styles */
-@media (max-width: 480px) {
-    .landing-container {
-        padding: 0 0.25rem;
-        align-items: flex-start;
-        padding-top: 0.5rem;
-    }
-
-    .card {
-        padding: 1rem;
-        gap: 0.75rem;
-        max-width: calc(100vw - 1rem);
-    }
-
-    h2 {
-        font-size: 1.2rem;
-    }
-
-    .setting-group {
-        gap: 0.3rem;
-    }
-
-    label {
-        font-size: 0.8rem;
-    }
-
-    .options {
-        gap: 0.3rem;
-    }
-
-    .options button {
-        padding: 0.4rem 0.2rem;
-        font-size: 0.75rem;
-        min-height: 40px;
-    }
-
-    .difficulty-options button {
-        font-size: 0.7rem;
-        padding: 0.35rem 0.15rem;
-    }
-
-    .buttons {
-        gap: 0.5rem;
-    }
-
-    .start-btn, .custom-btn {
-        padding: 0.7rem 0.3rem;
-        font-size: 0.9rem;
-        min-height: 44px;
-    }
-
-    .drop-zone {
-        padding: 0.5rem;
-        min-height: 44px;
-    }
-
-    .upload-prompt {
-        font-size: 0.8rem;
-    }
-
-    .stats-btn {
-        padding: 0.6rem;
-        font-size: 0.8rem;
-        min-height: 40px;
-    }
-}
-
-/* Very small screens */
-@media (max-width: 360px) {
-    .card {
-        padding: 0.75rem;
-        gap: 0.6rem;
-    }
-
-    h2 {
-        font-size: 1.1rem;
-    }
-
-    .options button {
-        font-size: 0.7rem;
-        min-height: 36px;
-    }
-
-    .difficulty-options button {
-        font-size: 0.65rem;
-    }
-
-    .start-btn, .custom-btn {
-        font-size: 0.85rem;
-        min-height: 40px;
-    }
-}
-</style>

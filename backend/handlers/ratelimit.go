@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 // RateLimiter implements a simple token bucket rate limiter.
@@ -66,7 +68,7 @@ func (rl *RateLimiter) Allow(ip string) bool {
 
 	// Refill tokens based on elapsed time
 	elapsed := now.Sub(bucket.lastCheck)
-	tokensToAdd := int(elapsed / rl.interval) * rl.rate
+	tokensToAdd := int(elapsed/rl.interval) * rl.rate
 	bucket.tokens += tokensToAdd
 	if bucket.tokens > rl.rate {
 		bucket.tokens = rl.rate
@@ -81,25 +83,22 @@ func (rl *RateLimiter) Allow(ip string) bool {
 	return false
 }
 
-// getClientIP extracts the client IP, preferring CF-Connecting-IP header.
-func getClientIP(r *http.Request) string {
-	if cfIP := r.Header.Get("CF-Connecting-IP"); cfIP != "" {
+// getClientIP extracts the client IP from Gin context.
+func getClientIP(c *gin.Context) string {
+	if cfIP := c.GetHeader("CF-Connecting-IP"); cfIP != "" {
 		return cfIP
 	}
-	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		return forwarded
-	}
-	return r.RemoteAddr
+	return c.ClientIP()
 }
 
-// Middleware wraps an http.Handler with rate limiting.
-func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := getClientIP(r)
+// Middleware returns a Gin middleware for rate limiting.
+func (rl *RateLimiter) Middleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ip := getClientIP(c)
 		if !rl.Allow(ip) {
-			http.Error(w, "Too many requests", http.StatusTooManyRequests)
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "Too many requests"})
 			return
 		}
-		next.ServeHTTP(w, r)
-	})
+		c.Next()
+	}
 }

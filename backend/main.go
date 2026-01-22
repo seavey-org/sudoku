@@ -2,9 +2,10 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
-	"net/http"
+
+	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
 
 	"github.com/codyseavey/sudoku/backend/config"
 	"github.com/codyseavey/sudoku/backend/handlers"
@@ -21,6 +22,8 @@ func main() {
 	if *verbose || cfg.Verbose {
 		sudoku.VerboseLogging = true
 		log.Println("Verbose logging enabled")
+	} else {
+		gin.SetMode(gin.ReleaseMode)
 	}
 
 	log.Println("Starting Sudoku Server...")
@@ -38,14 +41,32 @@ func main() {
 	completeHandler := handlers.NewCompleteHandler(statsStore)
 	uploadHandler := handlers.NewUploadHandler()
 
-	mux := http.NewServeMux()
+	r := gin.New()
+
+	// Add recovery and logging middleware
+	r.Use(gin.Recovery())
+	if *verbose || cfg.Verbose {
+		r.Use(gin.Logger())
+	}
+
+	// Configure CORS
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"*"},
+		AllowMethods:     []string{"GET", "POST", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type"},
+		AllowCredentials: false,
+	}))
 
 	// API routes with rate limiting
-	mux.Handle("/api/puzzle", rateLimiter.Middleware(puzzleHandler))
-	mux.Handle("/api/solve", rateLimiter.Middleware(solveHandler))
-	mux.Handle("/api/stats", rateLimiter.Middleware(statsHandler))
-	mux.Handle("/api/complete", rateLimiter.Middleware(completeHandler))
-	mux.Handle("/api/upload", rateLimiter.Middleware(uploadHandler))
+	api := r.Group("/api")
+	api.Use(rateLimiter.Middleware())
+	{
+		api.GET("/puzzle", puzzleHandler.GetPuzzle)
+		api.POST("/solve", solveHandler.SolvePuzzle)
+		api.GET("/stats", statsHandler.GetStats)
+		api.POST("/complete", completeHandler.RecordCompletion)
+		api.POST("/upload", uploadHandler.UploadImage)
+	}
 
 	// Static file serving
 	frontendDir := cfg.ResolveFrontendDir()
@@ -53,12 +74,15 @@ func main() {
 		log.Printf("Warning: Frontend directory not found. Checked 'dist' and '../frontend/dist'.")
 	} else {
 		log.Printf("Serving frontend from: %s", frontendDir)
-		fs := http.FileServer(http.Dir(frontendDir))
-		mux.Handle("/", fs)
+		r.Static("/assets", frontendDir+"/assets")
+		r.StaticFile("/", frontendDir+"/index.html")
+		r.NoRoute(func(c *gin.Context) {
+			c.File(frontendDir + "/index.html")
+		})
 	}
 
-	fmt.Printf("Server starting on port %s...\n", cfg.Port)
-	if err := http.ListenAndServe(":"+cfg.Port, mux); err != nil {
+	log.Printf("Server starting on port %s...\n", cfg.Port)
+	if err := r.Run(":" + cfg.Port); err != nil {
 		log.Fatalf("Error starting server: %v", err)
 	}
 }

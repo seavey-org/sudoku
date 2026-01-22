@@ -1,10 +1,11 @@
 package handlers
 
 import (
-	"encoding/json"
 	"io"
 	"log"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/codyseavey/sudoku/backend/sudoku"
 )
@@ -19,39 +20,31 @@ func NewUploadHandler() *UploadHandler {
 	return &UploadHandler{}
 }
 
-// ServeHTTP handles POST /api/upload requests.
-func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
+// UploadImage handles POST /api/upload requests.
+func (h *UploadHandler) UploadImage(c *gin.Context) {
 	// Limit upload size
-	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxUploadSize)
 
-	file, _, err := r.FormFile("image")
+	file, _, err := c.Request.FormFile("image")
 	if err != nil {
-		http.Error(w, "Invalid file", http.StatusBadRequest)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid file"})
 		return
 	}
 	defer file.Close()
 
 	fileBytes, err := io.ReadAll(file)
 	if err != nil {
-		http.Error(w, "Error reading file", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error reading file"})
 		return
 	}
 
-	gameType := r.FormValue("gameType")
+	gameType := c.PostForm("gameType")
 	puzzle, err := sudoku.ExtractSudokuFromImage(fileBytes, gameType)
 	if err != nil {
 		log.Printf("Extraction Error: %v", err)
-		http.Error(w, "Failed to process image: "+err.Error(), http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process image: " + err.Error()})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(puzzle); err != nil {
-		log.Printf("Error encoding upload response: %v", err)
-	}
+	c.JSON(http.StatusOK, puzzle)
 }

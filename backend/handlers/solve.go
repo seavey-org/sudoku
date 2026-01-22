@@ -1,9 +1,9 @@
 package handlers
 
 import (
-	"encoding/json"
-	"log"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/codyseavey/sudoku/backend/sudoku"
 )
@@ -27,27 +27,19 @@ type SolveResponse struct {
 	Solution [][]int `json:"solution"`
 }
 
-// ServeHTTP handles POST /api/solve requests.
-func (h *SolveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
+// SolvePuzzle handles POST /api/solve requests.
+func (h *SolveHandler) SolvePuzzle(c *gin.Context) {
 	var req SolveRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
 
 	solution, solvable := sudoku.Solve(req.Board, req.Size)
 	if !solvable {
-		http.Error(w, "Invalid puzzle: Must have exactly one unique solution", http.StatusBadRequest)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid puzzle: Must have exactly one unique solution"})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(SolveResponse{Solution: solution}); err != nil {
-		log.Printf("Error encoding solve response: %v", err)
-	}
+	c.JSON(http.StatusOK, SolveResponse{Solution: solution})
 }

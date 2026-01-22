@@ -12,11 +12,11 @@ func TestGenerateKillerUniqueness(t *testing.T) {
 	// Verify it has exactly one solution
 	// We need to construct a generator to call solveCountKiller
 	gen := Generator{
-		N: size,
+		N:         size,
 		BoxHeight: 2,
-		BoxWidth: 3,
-		Cages: pHard.Cages,
-		cageMap: make(map[Point]int),
+		BoxWidth:  3,
+		Cages:     pHard.Cages,
+		cageMap:   make(map[Point]int),
 	}
 	for idx, cage := range pHard.Cages {
 		for _, cell := range cage.Cells {
@@ -42,11 +42,11 @@ func TestGenerateKillerUniqueness(t *testing.T) {
 	// Test Easy (should also be unique, but logic is different)
 	pEasy := GenerateKiller("easy", size)
 	genEasy := Generator{
-		N: size,
+		N:         size,
 		BoxHeight: 2,
-		BoxWidth: 3,
-		Cages: pEasy.Cages,
-		cageMap: make(map[Point]int),
+		BoxWidth:  3,
+		Cages:     pEasy.Cages,
+		cageMap:   make(map[Point]int),
 	}
 	for idx, cage := range pEasy.Cages {
 		for _, cell := range cage.Cells {

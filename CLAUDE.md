@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Full-stack Sudoku application supporting classic and killer sudoku variants with image extraction (OCR) capabilities. Three-service architecture: Go backend, Vue 3 frontend, Python extraction microservice.
+Full-stack Sudoku application supporting classic and killer sudoku variants with image extraction (OCR) capabilities. Three-service architecture: Go backend (Gin), Vue 3 frontend (TypeScript + Tailwind), Python extraction microservice (FastAPI).
 
 ## Build & Run Commands
 
-### Backend (Go - port 8080)
+### Backend (Go/Gin - port 8080)
 ```bash
 cd backend
 go build -o sudoku-server .          # Build
@@ -16,17 +16,20 @@ go test ./...                        # Run all tests
 go test ./sudoku -run TestSolve      # Run single test by name
 go run main.go                       # Run server
 go run main.go -verbose              # Run with verbose logging
+golangci-lint run                    # Run linter
 ```
 
-### Frontend (Vue 3 - port 5173 dev)
+### Frontend (Vue 3 + TypeScript - port 5173 dev)
 ```bash
 cd frontend
 npm install                          # Install dependencies
 npm run dev                          # Development server
-npm run build                        # Production build to dist/
+npm run build                        # Production build (includes type check)
+npm run lint                         # Run ESLint
+npm run lint:fix                     # Fix lint issues
 ```
 
-### Extraction Service (Python/Flask - port 5001)
+### Extraction Service (Python/FastAPI - port 5001)
 ```bash
 cd extraction_service
 pip install -r requirements.txt      # Install dependencies
@@ -34,10 +37,20 @@ pip install -r requirements.txt      # Install dependencies
 # Set Google Cloud credentials (required for GCV OCR)
 export GOOGLE_APPLICATION_CREDENTIALS=/path/to/sudoku/google-cloud-adminSvc.json
 
-python app.py --port 5001            # Run service
+python main.py --port 5001           # Run FastAPI service (new)
+python app.py --port 5001            # Run legacy Flask service
 ```
 
 **Note:** Google Cloud Vision credentials are stored in `google-cloud-adminSvc.json` in the repo root. This file is gitignored.
+
+### Docker
+```bash
+# Local development
+docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+
+# Production (after pushing to GHCR)
+IMAGE_TAG=<commit-sha> docker compose up -d
+```
 
 ### Testing Extraction
 ```bash

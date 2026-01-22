@@ -1,0 +1,42 @@
+# Sudoku - Docker Compose
+#
+# Production (pull from GHCR):
+#   IMAGE_TAG=<commit-sha> docker compose up -d
+#
+# Local development (build locally):
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up
+#
+# Data is preserved via bind mounts:
+#   - Stats: ./data/stats.json
+
+services:
+  # Go Backend API (serves frontend static files)
+  backend:
+    image: ghcr.io/codyseavey/sudoku/app:${IMAGE_TAG:-latest}
+    container_name: sudoku-backend
+    ports:
+      - "3081:8080"
+    environment:
+      - SUDOKU_PORT=8080
+      - SUDOKU_STATS_FILE=/app/data/stats.json
+      - SUDOKU_FRONTEND_DIR=/app/frontend/dist
+      - GIN_MODE=release
+      - EXTRACTION_SERVICE_URL=http://extraction:5001
+    depends_on:
+      - extraction
+    volumes:
+      - ./data:/app/data
+    restart: always
+
+  # Extraction service (Python OCR) - for server-side image processing
+  extraction:
+    image: ghcr.io/codyseavey/sudoku/extraction:${IMAGE_TAG:-latest}
+    container_name: sudoku-extraction
+    # Port 5001 exposed only within Docker network
+    expose:
+      - "5001"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=5001
+      - USE_GPU=0
+    restart: always

@@ -12,23 +12,23 @@ const emit = defineEmits<{
 </script>
 
 <template>
-    <div class="hint-panel">
-        <div class="hint-header">
-            <strong>{{ hint.strategyName }}</strong>
-            <span class="hint-difficulty">(Difficulty: {{ hint.difficulty.toFixed(1) }})</span>
-        </div>
-        <p class="hint-description">{{ hint.description }}</p>
-        <div class="hint-actions">
-            <button
-                v-if="hint.eliminations.length > 0"
-                @click="emit('apply')"
-                class="apply-btn"
-            >
-                Apply ({{ hint.eliminations.length }} elimination{{ hint.eliminations.length > 1 ? 's' : '' }})
-            </button>
-            <button @click="emit('dismiss')" class="dismiss-btn">Dismiss</button>
-        </div>
+  <div class="hint-panel">
+    <div class="hint-header">
+      <strong>{{ hint.strategyName }}</strong>
+      <span class="hint-difficulty">(Difficulty: {{ hint.difficulty.toFixed(1) }})</span>
     </div>
+    <p class="hint-description">{{ hint.description }}</p>
+    <div class="hint-actions">
+      <button
+        v-if="hint.eliminations.length > 0"
+        @click="emit('apply')"
+        class="apply-btn"
+      >
+        Apply ({{ hint.eliminations.length }} elimination{{ hint.eliminations.length > 1 ? 's' : '' }})
+      </button>
+      <button @click="emit('dismiss')" class="dismiss-btn">Dismiss</button>
+    </div>
+  </div>
 </template>
 
 <style scoped>

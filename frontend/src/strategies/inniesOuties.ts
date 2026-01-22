@@ -62,7 +62,6 @@ function analyzeHouse(
   const houseCellSet = new Set(houseCells.map(c => `${c.row},${c.col}`))
 
   // Categorize cages relative to this house
-  let sumFullyInside = 0
   const cagesFullyInside: Cage[] = []
   const innies: { cage: Cage; cellInside: Cell }[] = []
   const outies: { cage: Cage; cellOutside: Cell }[] = []
@@ -74,7 +73,6 @@ function analyzeHouse(
     if (cellsOutside.length === 0) {
       // Cage fully inside house
       cagesFullyInside.push(cage)
-      sumFullyInside += cage.sum
     } else if (cellsInHouse.length === 1 && cellsOutside.length === cage.cells.length - 1) {
       // One cell inside (innie)
       innies.push({ cage, cellInside: cellsInHouse[0]! })
@@ -84,15 +82,12 @@ function analyzeHouse(
     }
   }
 
-  // Calculate known sum from solved cells and fully-inside cages
-  let knownSum = 0
-  let unsolvedCellsNotInCages: Cell[] = []
+  // Find unsolved cells not in fully-inside cages
+  const unsolvedCellsNotInCages: Cell[] = []
 
   for (const cell of houseCells) {
     const value = board[cell.row]?.[cell.col]
-    if (value !== null && value !== undefined) {
-      knownSum += value
-    } else if (value === null) {
+    if (value === null) {
       // Check if this cell is in a fully-inside cage
       const inFullCage = cagesFullyInside.some(cage =>
         cage.cells.some(cc => cc.row === cell.row && cc.col === cell.col)
@@ -128,7 +123,7 @@ function analyzeHouse(
 
       // Get sum of solved cells in the innie's cage (outside the house)
       let cageSolvedSum = 0
-      let cageUnsolvedOutside: Cell[] = []
+      const cageUnsolvedOutside: Cell[] = []
 
       for (const cageCell of innie.cage.cells) {
         if (cageCell.row === innie.cellInside.row && cageCell.col === innie.cellInside.col) {
@@ -207,7 +202,7 @@ function analyzeHouse(
     if (cellValue === null) {
       // Get sum of solved cells in the outie's cage (inside the house)
       let cageSolvedSum = 0
-      let cageUnsolvedInside: Cell[] = []
+      const cageUnsolvedInside: Cell[] = []
 
       for (const cageCell of outie.cage.cells) {
         if (cageCell.row === outie.cellOutside.row && cageCell.col === outie.cellOutside.col) {

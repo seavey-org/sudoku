@@ -209,7 +209,7 @@ function findType2(
         const X = extras3[0]!
 
         // Check if they share a house (row, col, or box)
-        let sharedHouseCells: Cell[] = []
+        const sharedHouseCells: Cell[] = []
         let houseType = ''
 
         if (corner3.row === corner4.row) {

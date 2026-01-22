@@ -43,13 +43,13 @@ func TestSolveUnique(t *testing.T) {
 	// Simple easy 4x4 or 9x9 puzzle known to be unique
 	// Let's use a 9x9 generated one with few holes
 	puzzle := Generate("easy", 9)
-	
+
 	// Solve it
 	sol, ok := Solve(puzzle.Board, 9)
 	if !ok {
 		t.Error("Failed to solve a valid generated puzzle")
 	}
-	
+
 	// Verify solution matches
 	for i := 0; i < 9; i++ {
 		for j := 0; j < 9; j++ {
@@ -91,20 +91,20 @@ func TestSolveMultipleSolutions(t *testing.T) {
 // Helper to check if a full grid is valid
 func isValidGrid(g Grid, n, boxH, boxW int) bool {
 	gen := Generator{N: n, BoxHeight: boxH, BoxWidth: boxW}
-	
+
 	for i := 0; i < n; i++ {
 		for j := 0; j < n; j++ {
 			val := g[i][j]
 			if val == 0 {
 				return false // Not full
 			}
-			
+
 			// Check checks
 			// We need to temporarily zero the cell to use isSafe
 			g[i][j] = 0
 			safe := gen.isSafe(g, i, j, val)
 			g[i][j] = val
-			
+
 			if !safe {
 				return false
 			}

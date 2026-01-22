@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useThemeStore } from './stores/theme'
 import SudokuBoard from './components/SudokuBoard.vue'
 import LandingPage from './components/LandingPage.vue'
 import StatsPage from './components/StatsPage.vue'
 import PuzzleSolved from './components/PuzzleSolved.vue'
+
+const themeStore = useThemeStore()
 
 type ViewState = 'landing' | 'game' | 'stats' | 'solved'
 const currentView = ref<ViewState>('landing')
@@ -35,11 +38,11 @@ const onBackToMenu = () => {
     // Clear any saved game state
     localStorage.removeItem(`sudoku_game_state_${gameSettings.value.size}`)
     // Also try clearing the other size just in case
-    localStorage.removeItem(`sudoku_game_state_6`)
-    localStorage.removeItem(`sudoku_game_state_9`)
+    localStorage.removeItem('sudoku_game_state_6')
+    localStorage.removeItem('sudoku_game_state_9')
     
     // Clear URL params
-    window.history.replaceState({}, document.title, "/")
+    window.history.replaceState({}, document.title, '/')
     
     currentView.value = 'landing'
     importedPuzzle.value = undefined
@@ -91,12 +94,22 @@ const parseImportedPuzzle = (importData: string) => {
             return decoded
         }
     } catch (e) {
-        console.error("Failed to parse imported puzzle", e)
+        console.error('Failed to parse imported puzzle', e)
     }
     return null
 }
 
+// Theme icon paths
+const themeIcon = () => {
+    if (themeStore.currentTheme === 'dark') return 'M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z'
+    if (themeStore.currentTheme === 'light') return 'M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z'
+    return 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z'
+}
+
 onMounted(() => {
+    // Initialize theme
+    themeStore.initTheme()
+    
     // Check for import param first
     const params = new URLSearchParams(window.location.search)
     const importData = params.get('import')
@@ -134,74 +147,57 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="container">
-    <h1 v-if="currentView === 'landing'">Sudoku</h1>
+  <div class="min-h-screen bg-gray-100 dark:bg-gray-900 transition-colors">
+    <!-- Theme toggle button (fixed position) -->
+    <button
+      @click="themeStore.cycleTheme()"
+      class="fixed top-4 right-4 p-2 rounded-lg bg-white dark:bg-gray-800 shadow-md hover:shadow-lg transition-shadow z-50"
+      :title="`Theme: ${themeStore.currentTheme}`"
+    >
+      <svg class="h-5 w-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="themeIcon()" />
+      </svg>
+    </button>
 
-    <LandingPage
+    <div class="flex flex-col items-center w-full max-w-full box-border pt-4 px-2 sm:px-4">
+      <h1 v-if="currentView === 'landing'" class="text-purple-300 dark:text-purple-300 text-4xl sm:text-5xl font-bold my-2">
+        Sudoku
+      </h1>
+
+      <LandingPage
         v-if="currentView === 'landing'"
         @start-game="onStartGame"
         @create-custom="onCreateCustom"
         @view-stats="onViewStats"
-    />
+      />
 
-    <StatsPage
+      <StatsPage
         v-else-if="currentView === 'stats'"
         @back-to-menu="onBackToMenu"
-    />
+      />
 
-    <PuzzleSolved
+      <PuzzleSolved
         v-else-if="currentView === 'solved'"
         :board="solvedBoard"
         :difficulty="gameSettings.difficulty"
         :size="gameSettings.size"
-        :gameType="gameSettings.gameType"
+        :game-type="gameSettings.gameType"
         @back-to-menu="onBackToMenu"
         @new-game="onStartGame(gameSettings)"
-    />
+      />
 
-    <SudokuBoard 
+      <SudokuBoard 
         v-else-if="currentView === 'game'"
-        :initialDifficulty="gameSettings.difficulty" 
+        :initial-difficulty="gameSettings.difficulty" 
         :size="gameSettings.size"
-        :isCustomMode="gameSettings.isCustomMode"
-        :gameType="gameSettings.gameType"
-        :initialPuzzle="importedPuzzle"
-        :initialBoardUpload="initialBoardState"
-        :initialCages="initialCagesState"
+        :is-custom-mode="gameSettings.isCustomMode"
+        :game-type="gameSettings.gameType"
+        :initial-puzzle="importedPuzzle"
+        :initial-board-upload="initialBoardState"
+        :initial-cages="initialCagesState"
         @back-to-menu="onBackToMenu"
         @puzzle-completed="onPuzzleCompleted"
-    />
+      />
+    </div>
   </div>
 </template>
-
-<style scoped>
-.container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  font-family: Arial, sans-serif;
-  padding-top: 1rem;
-  width: 100%;
-  max-width: 100%;
-  box-sizing: border-box;
-  padding-left: 0.5rem;
-  padding-right: 0.5rem;
-}
-
-h1 {
-  color: #dad4f6;
-  margin: 0.5rem 0;
-}
-
-@media (max-width: 480px) {
-  .container {
-    padding-top: 0.5rem;
-    padding-left: 0.25rem;
-    padding-right: 0.25rem;
-  }
-
-  h1 {
-    font-size: 1.8rem;
-  }
-}
-</style>

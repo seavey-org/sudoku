@@ -18,18 +18,18 @@ const onClear = () => {
 </script>
 
 <template>
-    <div class="number-pad">
-        <button
-            v-for="n in size"
-            :key="n"
-            class="pad-btn"
-            @mousedown.prevent
-            @click="onInput(n)"
-        >
-            {{ n }}
-        </button>
-        <button class="pad-btn clear-btn" @mousedown.prevent @click="onClear">X</button>
-    </div>
+  <div class="number-pad">
+    <button
+      v-for="n in size"
+      :key="n"
+      class="pad-btn"
+      @mousedown.prevent
+      @click="onInput(n)"
+    >
+      {{ n }}
+    </button>
+    <button class="pad-btn clear-btn" @mousedown.prevent @click="onClear">X</button>
+  </div>
 </template>
 
 <style scoped>

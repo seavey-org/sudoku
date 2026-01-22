@@ -5,27 +5,28 @@ Full-stack Sudoku application supporting classic and killer sudoku variants with
 ## Architecture
 
 Three-service architecture:
-- **Backend** (Go, port 8080) - API server for puzzle generation, solving, and statistics
-- **Frontend** (Vue 3, port 5173 dev) - Web UI with 24+ solving strategies
-- **Extraction Service** (Python/Flask, port 5001) - Image processing and OCR for puzzle extraction
+- **Backend** (Go + Gin, port 8080) - API server for puzzle generation, solving, and statistics
+- **Frontend** (Vue 3 + TypeScript + Tailwind CSS, port 5173 dev) - Web UI with 24+ solving strategies
+- **Extraction Service** (Python + FastAPI, port 5001) - Image processing and OCR for puzzle extraction
 
 ```
 Browser → Frontend (Vue 3)
            ↓
-        Backend API (Go :8080)
+        Backend API (Go/Gin :8080)
            ├→ /api/puzzle     - Generate puzzle
            ├→ /api/solve      - Solve board
            ├→ /api/complete   - Track completed puzzles
            ├→ /api/upload     - Image upload
-           │    └→ Extraction Service (Python :5001)
+           │    └→ Extraction Service (FastAPI :5001)
            └→ /api/stats      - Game statistics
 ```
 
 ## Prerequisites
 
 - **Go** 1.24+
-- **Node.js** 18+ and npm
-- **Python** 3.10+
+- **Node.js** 20+ and npm
+- **Python** 3.11+
+- **Docker** (optional, for containerized deployment)
 - **Google Cloud Vision credentials** (for OCR features) - store as `google-cloud-adminSvc.json` in repo root
 
 ## Quick Start
@@ -62,7 +63,7 @@ npm run dev     # Development server at http://localhost:5173
 npm run build   # Production build to dist/
 ```
 
-### Extraction Service (Python)
+### Extraction Service (Python/FastAPI)
 
 ```bash
 cd extraction_service
@@ -71,7 +72,18 @@ pip install -r requirements.txt
 # Set Google Cloud credentials (required for OCR)
 export GOOGLE_APPLICATION_CREDENTIALS=/path/to/google-cloud-adminSvc.json
 
-python app.py --port 5001
+python main.py --port 5001    # FastAPI (recommended)
+python app.py --port 5001     # Flask (legacy)
+```
+
+### Docker (Recommended for Production)
+
+```bash
+# Local development with live rebuild
+docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+
+# Production deployment
+IMAGE_TAG=<commit-sha> docker compose up -d
 ```
 
 ## ML Model Training
@@ -128,16 +140,24 @@ python test_data/test_killer_extraction.py
 
 ```
 ├── backend/
-│   ├── main.go              # Server entry point
+│   ├── main.go              # Gin server entry point
+│   ├── .golangci.yml        # Linter configuration
+│   ├── handlers/            # HTTP handlers
 │   └── sudoku/
 │       ├── sudoku.go        # Core solver
 │       ├── killer_*.go      # Killer sudoku logic
 │       └── extraction.go    # Extraction service proxy
 ├── frontend/
-│   └── src/
-│       └── strategies/      # 24+ solving algorithms
+│   ├── src/
+│   │   ├── stores/theme.ts  # Theme store (dark mode)
+│   │   └── strategies/      # 24+ solving algorithms
+│   ├── tailwind.config.js   # Tailwind CSS configuration
+│   ├── eslint.config.js     # ESLint configuration
+│   └── tsconfig.json        # TypeScript configuration
 ├── extraction_service/
-│   ├── app.py               # Flask service (4300+ lines)
+│   ├── main.py              # FastAPI service entry point
+│   ├── app.py               # Flask service (legacy, 4300+ lines)
+│   ├── Dockerfile           # Container build
 │   ├── models/              # Trained ML models
 │   │   ├── digit_cnn.pth
 │   │   ├── cage_sum_cnn.pth
@@ -149,8 +169,11 @@ python test_data/test_killer_extraction.py
 ├── scripts/
 │   ├── dev.sh               # Local development script
 │   └── train-models.sh      # Model training script
-└── deployment/
-    └── deploy.sh            # Production deployment
+├── deployment/
+│   └── deploy.sh            # Production deployment
+├── Dockerfile               # Combined frontend + backend image
+├── docker-compose.yml       # Production compose
+└── docker-compose.local.yml # Local development compose
 ```
 
 ## Features

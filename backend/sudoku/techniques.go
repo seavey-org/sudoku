@@ -18,10 +18,10 @@ type TechniqueResult struct {
 
 // DifficultyAnalysis represents the difficulty analysis of a puzzle
 type DifficultyAnalysis struct {
-	MaxDifficulty   float64
-	TechniquesUsed  []string
-	HardMoveCount   int // Number of moves requiring difficulty > 3.5
-	Solvable        bool
+	MaxDifficulty  float64
+	TechniquesUsed []string
+	HardMoveCount  int // Number of moves requiring difficulty > 3.5
+	Solvable       bool
 }
 
 // Candidates represents possible values for each cell

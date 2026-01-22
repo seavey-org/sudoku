@@ -2,6 +2,7 @@ package sudoku
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,8 +19,16 @@ var VerboseLogging bool
 
 // isExtractionServiceAvailable checks if the Python extraction service is running
 func isExtractionServiceAvailable() bool {
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(ExtractionServiceURL + "/health")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ExtractionServiceURL+"/health", nil)
+	if err != nil {
+		return false
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
 		return false
 	}
@@ -46,8 +55,8 @@ func ExtractSudokuFromImage(imageBytes []byte, gameType string) (Puzzle, error) 
 
 // ExtractionResponse represents the response from Python extraction service
 type ExtractionResponse struct {
-	Board    [][]int `json:"board"`
-	Cages    []struct {
+	Board [][]int `json:"board"`
+	Cages []struct {
 		Sum   int `json:"sum"`
 		Cells []struct {
 			Row int `json:"row"`
@@ -83,9 +92,11 @@ func callExtractionService(imageBytes []byte, endpoint string) (Puzzle, error) {
 		return emptyPuzzle, fmt.Errorf("failed to close writer: %v", err)
 	}
 
-	// Send request to Python service
-	client := &http.Client{Timeout: 120 * time.Second}
-	req, err := http.NewRequest("POST", ExtractionServiceURL+endpoint, body)
+	// Send request to Python service with context timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, ExtractionServiceURL+endpoint, body)
 	if err != nil {
 		return emptyPuzzle, fmt.Errorf("failed to create request: %v", err)
 	}
@@ -95,6 +106,7 @@ func callExtractionService(imageBytes []byte, endpoint string) (Puzzle, error) {
 		fmt.Printf("Calling Python extraction service: %s%s\n", ExtractionServiceURL, endpoint)
 	}
 
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return emptyPuzzle, fmt.Errorf("extraction request failed: %v", err)

@@ -1,9 +1,10 @@
 package handlers
 
 import (
-	"encoding/json"
 	"log"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/codyseavey/sudoku/backend/storage"
 )
@@ -18,19 +19,10 @@ func NewStatsHandler(store *storage.StatsStore) *StatsHandler {
 	return &StatsHandler{store: store}
 }
 
-// ServeHTTP handles GET /api/stats requests.
-func (h *StatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
+// GetStats handles GET /api/stats requests.
+func (h *StatsHandler) GetStats(c *gin.Context) {
 	stats := h.store.Get()
-
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(stats); err != nil {
-		log.Printf("Error encoding stats response: %v", err)
-	}
+	c.JSON(http.StatusOK, stats)
 }
 
 // CompleteHandler handles puzzle completion requests.
@@ -50,26 +42,21 @@ type CompleteRequest struct {
 	Size       int    `json:"size"`
 }
 
-// ServeHTTP handles POST /api/complete requests.
-func (h *CompleteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
+// RecordCompletion handles POST /api/complete requests.
+func (h *CompleteHandler) RecordCompletion(c *gin.Context) {
 	var req CompleteRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
 
-	cfIP := r.Header.Get("CF-Connecting-IP")
-	sourceIP := r.RemoteAddr
-	userAgent := r.UserAgent()
+	cfIP := c.GetHeader("CF-Connecting-IP")
+	sourceIP := c.ClientIP()
+	userAgent := c.GetHeader("User-Agent")
 	log.Printf("Puzzle Completed: difficulty=%s, size=%d, type=%s, CF-Connecting-IP=%s, SourceIP=%s, UserAgent=%s",
 		req.Difficulty, req.Size, req.GameType, cfIP, sourceIP, userAgent)
 
 	h.store.RecordCompletion(req.GameType, req.Size, req.Difficulty)
 
-	w.WriteHeader(http.StatusOK)
+	c.Status(http.StatusOK)
 }
