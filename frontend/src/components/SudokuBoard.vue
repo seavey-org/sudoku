@@ -1155,6 +1155,8 @@ onUnmounted(() => {
   width: 100%;
   max-width: 450px;
   margin-bottom: 20px;
+  contain: layout style;
+  overflow: hidden;
 }
 
 .grid {
@@ -1188,7 +1190,9 @@ onUnmounted(() => {
 }
 
 .row {
-  display: contents;
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
 }
 
 .cell {
@@ -1355,6 +1359,8 @@ onUnmounted(() => {
     margin-bottom: 10px;
     width: 100%;
     max-width: 450px;
+    position: relative;
+    z-index: 50;
 }
 
 .controls {
