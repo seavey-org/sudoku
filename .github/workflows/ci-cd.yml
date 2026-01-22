@@ -357,13 +357,12 @@ jobs:
 
       - name: Sync deployment files to server
         run: |
-          ssh $SERVER "mkdir -p $APP_DIR/deployment"
+          ssh $SERVER "sudo mkdir -p $APP_DIR && sudo chown \$(whoami) $APP_DIR"
+          ssh $SERVER "mkdir -p $APP_DIR/deployment $APP_DIR/data"
           scp docker-compose.yml $SERVER:$APP_DIR/
           scp deployment/*.service deployment/*.conf $SERVER:$APP_DIR/deployment/ 2>/dev/null || true
-
-      - name: Ensure data directories exist
-        run: |
-          ssh $SERVER "mkdir -p $APP_DIR/data"
+          # Verify docker-compose.yml was copied
+          ssh $SERVER "ls -la $APP_DIR/docker-compose.yml"
 
       - name: Save IMAGE_TAG for systemd service
         run: |
