@@ -51,3 +51,28 @@ export interface Cell {
   row: number
   col: number
 }
+
+// Imported puzzle data from share links or storage
+export interface ImportedPuzzle {
+  board: number[][]
+  solution: number[][]
+  size: number
+  difficulty: string
+  gameType?: string
+  cages?: Cage[]
+}
+
+// History state entry for undo functionality
+export interface HistoryState {
+  board: (number | null)[][]
+  candidates: number[][][]
+  eliminatedCandidates: Set<number>[][]
+}
+
+// Serialized history state (for localStorage)
+// eliminatedCandidates: 2D grid where each cell contains an array of eliminated candidate numbers
+export interface SerializedHistoryState {
+  board: (number | null)[][]
+  candidates: number[][][]
+  eliminatedCandidates: number[][][]
+}

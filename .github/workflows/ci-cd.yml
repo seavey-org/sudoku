@@ -6,15 +6,22 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  GO_VERSION: '1.24'
+  NODE_VERSION: '20'
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository }}
+
 jobs:
   check-changes:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     outputs:
       test_data: ${{ steps.filter.outputs.test_data }}
       frontend: ${{ steps.filter.outputs.frontend }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -32,7 +39,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
@@ -42,9 +49,8 @@ jobs:
       - name: Validate cage contiguity
         run: python test_data/validate_cage_contiguity.py
 
-  test-backend:
+  lint-backend:
     runs-on: ubuntu-latest
-    needs: validate-test-data
     defaults:
       run:
         working-directory: backend
@@ -54,20 +60,20 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: backend/go.sum
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v4
+        uses: golangci/golangci-lint-action@v6
         with:
           version: latest
           working-directory: backend
+          args: --timeout=5m
 
-      - name: Run tests
-        run: go test ./...
-
-  build-backend:
+  test-backend:
     runs-on: ubuntu-latest
-    needs: test-backend
+    needs: lint-backend
     defaults:
       run:
         working-directory: backend
@@ -77,18 +83,17 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: backend/go.sum
 
-      - name: Build
-        run: GOOS=linux GOARCH=amd64 go build -o sudoku-server .
+      - name: Download dependencies
+        run: go mod download
 
-      - name: Upload backend artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-binary
-          path: backend/sudoku-server
+      - name: Run tests
+        run: go test -race ./...
 
-  build-frontend:
+  lint-frontend:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -99,31 +104,44 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
+      - name: Run ESLint
         run: npm run lint
 
       - name: Type check
         run: npm run type-check
 
+  build-frontend:
+    runs-on: ubuntu-latest
+    needs: lint-frontend
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Build
         run: npm run build
 
-      - name: Upload frontend artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-dist
-          path: frontend/dist
-
   retrain-models:
     runs-on: self-hosted
-    needs: [test-backend, validate-test-data, check-changes]
+    needs: [validate-test-data, check-changes]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.check-changes.outputs.test_data == 'true'
     defaults:
       run:
@@ -204,45 +222,67 @@ jobs:
           echo "Retrained ML Models:"
           ls -lh models/
 
-  deploy:
-    runs-on: self-hosted
-    needs: [build-backend, build-frontend, retrain-models, check-changes]
-    if: |
-      always() &&
-      github.ref == 'refs/heads/main' &&
-      github.event_name == 'push' &&
-      needs.build-backend.result == 'success' &&
-      needs.build-frontend.result == 'success' &&
-      (needs.retrain-models.result == 'success' || needs.retrain-models.result == 'skipped')
-    environment: production
-    env:
-      SERVER: "192.168.86.227"
-      APP_DIR: "/opt/sudoku"
-      SERVICE_NAME: "sudoku"
-      EXTRACTION_SERVICE_NAME: "sudoku-extraction"
+  build-push-app:
+    runs-on: ubuntu-latest
+    needs: [test-backend, build-frontend]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download backend artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: backend-binary
-          path: backend
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Download frontend artifact
-        uses: actions/download-artifact@v4
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          name: frontend-dist
-          path: frontend/dist
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download ML models artifact (from this run)
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_PREFIX }}/app
+          tags: |
+            type=sha,prefix=,format=long
+            type=raw,value=latest
+
+      - name: Build and push app image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-push-extraction:
+    runs-on: ubuntu-latest
+    needs: retrain-models
+    if: |
+      always() &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      (needs.retrain-models.result == 'success' || needs.retrain-models.result == 'skipped')
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download ML models (from this run)
         if: needs.retrain-models.result == 'success'
         uses: actions/download-artifact@v4
         with:
           name: ml-models
           path: extraction_service/models
 
-      - name: Download ML models artifact (from previous run)
+      - name: Download ML models (from previous run)
         if: needs.retrain-models.result == 'skipped'
         uses: dawidd6/action-download-artifact@v6
         with:
@@ -252,77 +292,113 @@ jobs:
           search_artifacts: true
           if_no_artifact_found: fail
 
-      - name: Make backend binary executable
-        run: chmod +x backend/sudoku-server
-
-      - name: Stop services
+      - name: Verify ML models exist
         run: |
-          ssh $SERVER "sudo systemctl stop $SERVICE_NAME || true"
-          ssh $SERVER "sudo systemctl stop $EXTRACTION_SERVICE_NAME || true"
+          echo "Verifying ML models are present for Docker build..."
+          ls -la extraction_service/models/
+          test -f extraction_service/models/digit_cnn.pth || { echo "ERROR: digit_cnn.pth missing"; exit 1; }
+          test -f extraction_service/models/boundary_classifier_rf.pkl || { echo "ERROR: boundary_classifier_rf.pkl missing"; exit 1; }
+          test -f extraction_service/models/boundary_scaler.pkl || { echo "ERROR: boundary_scaler.pkl missing"; exit 1; }
+          test -f extraction_service/models/cage_sum_cnn.pth || { echo "ERROR: cage_sum_cnn.pth missing"; exit 1; }
 
-      - name: Prepare remote directory
-        run: |
-          ssh $SERVER "sudo mkdir -p $APP_DIR && sudo chown \$(whoami) $APP_DIR"
-          ssh $SERVER "mkdir -p $APP_DIR/extraction_service"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Transfer files
-        run: |
-          scp backend/sudoku-server $SERVER:$APP_DIR/
-          scp -r frontend/dist $SERVER:$APP_DIR/
-          scp extraction_service/app.py $SERVER:$APP_DIR/extraction_service/
-          scp extraction_service/digit_classifier.py $SERVER:$APP_DIR/extraction_service/
-          scp extraction_service/requirements.txt $SERVER:$APP_DIR/extraction_service/
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Deploy ML models
-        run: |
-          echo "Deploying ML models to production..."
-          ssh $SERVER "mkdir -p $APP_DIR/extraction_service/models"
-          scp extraction_service/models/digit_cnn.pth $SERVER:$APP_DIR/extraction_service/models/
-          scp extraction_service/models/boundary_classifier_rf.pkl $SERVER:$APP_DIR/extraction_service/models/
-          scp extraction_service/models/boundary_scaler.pkl $SERVER:$APP_DIR/extraction_service/models/
-          scp extraction_service/models/cage_sum_cnn.pth $SERVER:$APP_DIR/extraction_service/models/
-          echo "ML models deployed successfully"
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_PREFIX }}/extraction
+          tags: |
+            type=sha,prefix=,format=long
+            type=raw,value=latest
 
-      - name: Setup environment variables
-        run: |
-          ssh $SERVER "echo GOOGLE_API_KEY=\$(cat /home/cody/gemini-api-key) > $APP_DIR/config.env"
+      - name: Build and push extraction image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./extraction_service
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Setup Python environment
-        run: |
-          ssh $SERVER "cd $APP_DIR/extraction_service && python3 -m venv venv"
-          ssh $SERVER "cd $APP_DIR/extraction_service && ./venv/bin/pip install --upgrade pip"
-          ssh $SERVER "cd $APP_DIR/extraction_service && ./venv/bin/pip install -r requirements.txt"
+  deploy:
+    runs-on: [self-hosted, fedora]
+    needs: [build-push-app, build-push-extraction, check-changes]
+    if: |
+      always() &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push' &&
+      needs.build-push-app.result == 'success' &&
+      needs.build-push-extraction.result == 'success'
+    environment: production
+    env:
+      SERVER: "192.168.86.227"
+      APP_DIR: "/opt/sudoku"
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Setup systemd services
+      - name: Stop old systemd services (migration cleanup)
         run: |
-          scp deployment/sudoku.service $SERVER:/tmp/
-          scp deployment/sudoku-extraction.service $SERVER:/tmp/
-          ssh $SERVER "sudo mv /tmp/sudoku.service /etc/systemd/system/"
-          ssh $SERVER "sudo mv /tmp/sudoku-extraction.service /etc/systemd/system/"
+          # Stop and disable old non-Docker systemd services if they exist
+          ssh $SERVER "sudo systemctl stop sudoku 2>/dev/null || true"
+          ssh $SERVER "sudo systemctl stop sudoku-extraction 2>/dev/null || true"
+          ssh $SERVER "sudo systemctl disable sudoku 2>/dev/null || true"
+          ssh $SERVER "sudo systemctl disable sudoku-extraction 2>/dev/null || true"
+
+      - name: Sync deployment files to server
+        run: |
+          ssh $SERVER "mkdir -p $APP_DIR/deployment"
+          scp docker-compose.yml $SERVER:$APP_DIR/
+          scp deployment/*.service deployment/*.conf $SERVER:$APP_DIR/deployment/ 2>/dev/null || true
+
+      - name: Ensure data directories exist
+        run: |
+          ssh $SERVER "mkdir -p $APP_DIR/data"
+
+      - name: Save IMAGE_TAG for systemd service
+        run: |
+          ssh $SERVER "echo 'IMAGE_TAG=${{ github.sha }}' > $APP_DIR/.env.deploy"
+
+      - name: Log in to GHCR on server
+        run: |
+          ssh $SERVER "echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin"
+
+      - name: Pull and deploy images
+        run: |
+          ssh $SERVER "cd $APP_DIR && IMAGE_TAG=${{ github.sha }} docker compose pull"
+          ssh $SERVER "cd $APP_DIR && IMAGE_TAG=${{ github.sha }} docker compose down --remove-orphans || true"
+          ssh $SERVER "cd $APP_DIR && IMAGE_TAG=${{ github.sha }} docker compose up -d"
+
+      - name: Wait for services to be healthy
+        run: |
+          echo "Waiting for services to start..."
+          sleep 10
+          ssh $SERVER "cd $APP_DIR && docker compose ps"
+
+      - name: Verify service health
+        run: |
+          echo "Checking backend health..."
+          ssh $SERVER "curl -sf http://localhost:3081/api/health || echo 'Backend health check pending (endpoint may not exist)'"
+
+          echo "Checking extraction service health..."
+          ssh $SERVER "docker exec sudoku-extraction curl -sf http://localhost:5001/health" || echo "Extraction health check pending"
+
+      - name: Setup Docker Compose systemd service
+        run: |
+          scp deployment/sudoku-docker.service $SERVER:/tmp/
+          ssh $SERVER "sudo mv /tmp/sudoku-docker.service /etc/systemd/system/"
           ssh $SERVER "sudo systemctl daemon-reload"
-          ssh $SERVER "sudo systemctl enable $SERVICE_NAME"
-          ssh $SERVER "sudo systemctl enable $EXTRACTION_SERVICE_NAME"
-
-      - name: Start extraction service
-        run: |
-          ssh $SERVER "sudo systemctl start $EXTRACTION_SERVICE_NAME"
-          sleep 5
-
-      - name: Verify extraction service
-        run: |
-          echo "Checking extraction service health endpoint..."
-          ssh $SERVER "curl -s http://127.0.0.1:5001/health" | grep -q "ok" || echo "Warning: Extraction service may not be running properly"
-
-          echo "Verifying ML models exist on server..."
-          ssh $SERVER "test -f $APP_DIR/extraction_service/models/digit_cnn.pth || { echo 'ERROR: digit_cnn.pth not found'; exit 1; }"
-          ssh $SERVER "test -f $APP_DIR/extraction_service/models/boundary_classifier_rf.pkl || { echo 'ERROR: boundary_classifier_rf.pkl not found'; exit 1; }"
-          ssh $SERVER "test -f $APP_DIR/extraction_service/models/boundary_scaler.pkl || { echo 'ERROR: boundary_scaler.pkl not found'; exit 1; }"
-          ssh $SERVER "test -f $APP_DIR/extraction_service/models/cage_sum_cnn.pth || { echo 'ERROR: cage_sum_cnn.pth not found'; exit 1; }"
-          echo "All ML models verified on production server"
-
-      - name: Start main service
-        run: |
-          ssh $SERVER "sudo systemctl start $SERVICE_NAME"
+          ssh $SERVER "sudo systemctl enable sudoku-docker"
 
       - name: Configure nginx
         run: |
@@ -339,8 +415,24 @@ jobs:
             -H "Content-Type: application/json" \
             --data '{"hosts":["sudoku.seavey.dev"]}'
 
-      - name: Verify deployment
+      - name: Clean up old Docker images
         run: |
-          echo "Checking service status..."
-          ssh $SERVER "sudo systemctl status $SERVICE_NAME --no-pager | head -5"
-          ssh $SERVER "sudo systemctl status $EXTRACTION_SERVICE_NAME --no-pager | head -5"
+          echo "=== Docker disk usage before cleanup ==="
+          ssh $SERVER "docker system df"
+          echo ""
+          echo "Pruning unused Docker images..."
+          ssh $SERVER "docker image prune -af --filter 'until=168h'"
+          echo ""
+          echo "=== Docker disk usage after cleanup ==="
+          ssh $SERVER "docker system df"
+
+      - name: Deployment summary
+        run: |
+          echo "=== Deployment Complete ==="
+          echo "App URL: https://sudoku.seavey.dev"
+          echo "Image tag: ${{ github.sha }}"
+          echo ""
+          echo "=== Service Status ==="
+          ssh $SERVER "cd $APP_DIR && docker compose ps"
+          echo ""
+          echo "To rollback: IMAGE_TAG=<previous-sha> docker compose up -d"

@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, onUnmounted } from 'vue'
 import { findHint } from '../strategies'
-import type { HintResult, SolveContext } from '../strategies/types'
+import type { HintResult, SolveContext, ImportedPuzzle, Cage, SerializedHistoryState } from '../strategies/types'
 
 const props = defineProps<{
     initialDifficulty: string,
     size: number,
-    initialPuzzle?: Record<string, any>,
+    initialPuzzle?: ImportedPuzzle,
     isCustomMode?: boolean,
     gameType?: string,
     initialBoardUpload?: number[][],
-    initialCages?: { sum: number, cells: { row: number, col: number }[] }[]
+    initialCages?: Cage[]
 }>()
 
 const emit = defineEmits(['back-to-menu', 'puzzle-completed'])
@@ -237,7 +237,7 @@ const loadGame = (): boolean => {
                 difficulty.value = gameState.difficulty
             }
             if (gameState.history) {
-                 history.value = gameState.history.map((state: any) => ({
+                 history.value = gameState.history.map((state: SerializedHistoryState) => ({
                     board: state.board,
                     candidates: state.candidates,
                     eliminatedCandidates: state.eliminatedCandidates.map((row: number[][]) => 
@@ -260,7 +260,7 @@ const loadGame = (): boolean => {
     return false
 }
 
-const loadImportedPuzzle = (data: any) => {
+const loadImportedPuzzle = (data: ImportedPuzzle) => {
     // Setup from import
     board.value = data.board.map((row: number[]) => row.map(val => val === 0 ? null : val))
     isFixed.value = data.board.map((row: number[]) => row.map(val => val !== 0))
@@ -348,17 +348,13 @@ const shareGame = () => {
         return
     }
     
-    const data: Record<string, any> = {
+    const data: ImportedPuzzle = {
         board: initialBoardState.value,
         solution: solution.value,
         size: props.size,
         difficulty: difficulty.value,
-        gameType: props.gameType
-    }
-    
-    // Include cages for Killer Sudoku
-    if (props.gameType === 'killer' && cages.value.length > 0) {
-        data.cages = cages.value
+        gameType: props.gameType,
+        cages: props.gameType === 'killer' && cages.value.length > 0 ? cages.value : undefined
     }
     
     const json = JSON.stringify(data)

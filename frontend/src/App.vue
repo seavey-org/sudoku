@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useThemeStore } from './stores/theme'
+import type { ImportedPuzzle, Cage } from './strategies/types'
 import SudokuBoard from './components/SudokuBoard.vue'
 import LandingPage from './components/LandingPage.vue'
 import StatsPage from './components/StatsPage.vue'
@@ -13,10 +14,10 @@ const currentView = ref<ViewState>('landing')
 const solvedBoard = ref<(number | null)[][]>([])
 
 const gameSettings = ref({ difficulty: 'medium', size: 9, isCustomMode: false, gameType: 'standard' })
-const importedPuzzle = ref<Record<string, any> | undefined>(undefined)
+const importedPuzzle = ref<ImportedPuzzle | undefined>(undefined)
 // For raw board data from upload (array of arrays)
 const initialBoardState = ref<number[][] | undefined>(undefined)
-const initialCagesState = ref<{ sum: number, cells: { row: number, col: number }[] }[] | undefined>(undefined)
+const initialCagesState = ref<Cage[] | undefined>(undefined)
 
 const onStartGame = (settings: { difficulty: string, size: number, gameType?: string }) => {
     gameSettings.value = { ...settings, isCustomMode: false, gameType: settings.gameType || 'standard' }
@@ -87,9 +88,9 @@ const loadSavedGameState = (size: number): SavedGameState | null => {
 }
 
 // Helper to parse imported puzzle from URL
-const parseImportedPuzzle = (importData: string) => {
+const parseImportedPuzzle = (importData: string): ImportedPuzzle | null => {
     try {
-        const decoded = JSON.parse(atob(importData))
+        const decoded = JSON.parse(atob(importData)) as ImportedPuzzle
         if (decoded.board && decoded.solution) {
             return decoded
         }

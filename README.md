@@ -4,21 +4,20 @@ Full-stack Sudoku application supporting classic and killer sudoku variants with
 
 ## Architecture
 
-Three-service architecture:
-- **Backend** (Go + Gin, port 8080) - API server for puzzle generation, solving, and statistics
-- **Frontend** (Vue 3 + TypeScript + Tailwind CSS, port 5173 dev) - Web UI with 24+ solving strategies
-- **Extraction Service** (Python + FastAPI, port 5001) - Image processing and OCR for puzzle extraction
+Three-service architecture deployed via Docker Compose:
+- **Backend** (Go + Gin) - API server for puzzle generation, solving, and statistics
+- **Frontend** (Vue 3 + TypeScript + Tailwind CSS) - Web UI with 24+ solving strategies
+- **Extraction Service** (Python + FastAPI) - Image processing and OCR for puzzle extraction
 
 ```
-Browser → Frontend (Vue 3)
-           ↓
-        Backend API (Go/Gin :8080)
-           ├→ /api/puzzle     - Generate puzzle
-           ├→ /api/solve      - Solve board
-           ├→ /api/complete   - Track completed puzzles
-           ├→ /api/upload     - Image upload
-           │    └→ Extraction Service (FastAPI :5001)
-           └→ /api/stats      - Game statistics
+                                    Docker Network
+Browser → nginx (:443) → Backend Container (:3081 → :8080)
+                              ├→ /api/puzzle     - Generate puzzle
+                              ├→ /api/solve      - Solve board
+                              ├→ /api/complete   - Track completed puzzles
+                              ├→ /api/upload     - Image upload
+                              │    └→ Extraction Container (:5001)
+                              └→ /api/stats      - Game statistics
 ```
 
 ## Prerequisites
@@ -170,7 +169,8 @@ python test_data/test_killer_extraction.py
 │   ├── dev.sh               # Local development script
 │   └── train-models.sh      # Model training script
 ├── deployment/
-│   └── deploy.sh            # Production deployment
+│   ├── sudoku-docker.service    # Systemd unit for Docker Compose
+│   └── sudoku.seavey.dev.conf   # nginx configuration
 ├── Dockerfile               # Combined frontend + backend image
 ├── docker-compose.yml       # Production compose
 └── docker-compose.local.yml # Local development compose
@@ -194,9 +194,23 @@ python test_data/test_killer_extraction.py
 ## CI/CD
 
 Push to `main` triggers GitHub Actions:
-1. Backend tests (`go test ./...`)
-2. Build Go binary and Vue frontend
-3. Retrain ML models from test_data images
-4. Deploy to production
+1. Lint and test backend (`golangci-lint`, `go test -race ./...`)
+2. Lint and build frontend (`eslint`, `vue-tsc`, `vite build`)
+3. Retrain ML models if `test_data/` changed
+4. Build and push Docker images to GHCR
+5. Deploy via Docker Compose on production server
+
+### Docker Images
+
+- `ghcr.io/codyseavey/sudoku/app` - Go backend + Vue frontend
+- `ghcr.io/codyseavey/sudoku/extraction` - Python extraction service with ML models
+
+### Rollback
+
+```bash
+# On production server
+cd /opt/sudoku
+IMAGE_TAG=<previous-sha> docker compose up -d
+```
 
 Manual model retraining available via "Retrain ML Models" workflow.

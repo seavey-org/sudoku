@@ -55,7 +55,7 @@ const processFile = async (file: File) => {
             })
             size.value = 9
         }
-    } catch (e: any) {
+    } catch (e: unknown) {
         console.error('Upload error:', e)
         errorMsg.value = 'Failed to process image. Please try again.'
     } finally {

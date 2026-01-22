@@ -45,11 +45,18 @@ python app.py --port 5001            # Run legacy Flask service
 
 ### Docker
 ```bash
-# Local development
+# Local development (builds images locally)
 docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
 
-# Production (after pushing to GHCR)
+# Production (pulls from GHCR)
 IMAGE_TAG=<commit-sha> docker compose up -d
+
+# Check container status
+docker compose ps
+
+# View logs
+docker compose logs -f backend
+docker compose logs -f extraction
 ```
 
 ### Testing Extraction
@@ -171,10 +178,22 @@ test_data/
 
 ## CI/CD
 
-Push to `main` triggers GitHub Actions pipeline that:
-1. Tests backend (`go test ./...`)
-2. Builds Go binary and Vue frontend
-3. Retrains ML models from test_data images
-4. Deploys to production (192.168.86.227)
+Push to `main` triggers GitHub Actions pipeline:
+1. **Lint**: `golangci-lint` (backend), `eslint` + `vue-tsc` (frontend)
+2. **Test**: `go test -race ./...` (backend)
+3. **Build**: Docker images for app and extraction service
+4. **Push**: Images to `ghcr.io/codyseavey/sudoku/{app,extraction}`
+5. **Deploy**: Docker Compose on production server (192.168.86.227)
+
+Three parallel pipelines merge at deploy:
+- Backend: lint → test → build-push-app
+- Frontend: lint → build (validates compilation)
+- Extraction: validate-test-data → retrain-models (if changed) → build-push-extraction
+
+### Rollback
+```bash
+cd /opt/sudoku
+IMAGE_TAG=<previous-sha> docker compose up -d
+```
 
 Manual model retraining available via GitHub Actions "Retrain ML Models" workflow.
