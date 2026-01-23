@@ -376,6 +376,8 @@ jobs:
         run: |
           ssh $SERVER "cd $APP_DIR && IMAGE_TAG=${{ github.sha }} docker compose pull"
           ssh $SERVER "cd $APP_DIR && IMAGE_TAG=${{ github.sha }} docker compose down --remove-orphans || true"
+          # Force remove any stale containers that might conflict (from previous non-compose deployments)
+          ssh $SERVER "docker rm -f sudoku-backend sudoku-extraction 2>/dev/null || true"
           ssh $SERVER "cd $APP_DIR && IMAGE_TAG=${{ github.sha }} docker compose up -d"
 
       - name: Wait for services to be healthy
