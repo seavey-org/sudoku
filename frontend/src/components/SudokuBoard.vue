@@ -1982,7 +1982,7 @@ button.game-btn.active {
 }
 
 :where(.dark, .dark *) .value-input {
-    color: #2563eb;
+    color: #ef4444;
 }
 
 :where(.dark, .dark *) .value-input.fixed {
