@@ -202,8 +202,8 @@ Push to `main` triggers GitHub Actions:
 
 ### Docker Images
 
-- `ghcr.io/codyseavey/sudoku/app` - Go backend + Vue frontend
-- `ghcr.io/codyseavey/sudoku/extraction` - Python extraction service with ML models
+- `ghcr.io/seavey-org/sudoku/app` - Go backend + Vue frontend
+- `ghcr.io/seavey-org/sudoku/extraction` - Python extraction service with ML models
 
 ### Rollback
 

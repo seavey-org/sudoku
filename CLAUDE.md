@@ -182,7 +182,7 @@ Push to `main` triggers GitHub Actions pipeline:
 1. **Lint**: `golangci-lint` (backend), `eslint` + `vue-tsc` (frontend)
 2. **Test**: `go test -race ./...` (backend)
 3. **Build**: Docker images for app and extraction service
-4. **Push**: Images to `ghcr.io/codyseavey/sudoku/{app,extraction}`
+4. **Push**: Images to `ghcr.io/seavey-org/sudoku/{app,extraction}`
 5. **Deploy**: Docker Compose on production server (192.168.86.227)
 
 Three parallel pipelines merge at deploy:

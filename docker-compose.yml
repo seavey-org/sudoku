@@ -12,7 +12,7 @@
 services:
   # Go Backend API (serves frontend static files)
   backend:
-    image: ghcr.io/codyseavey/sudoku/app:${IMAGE_TAG:-latest}
+    image: ghcr.io/seavey-org/sudoku/app:${IMAGE_TAG:-latest}
     container_name: sudoku-backend
     ports:
       - "3081:8080"
@@ -30,7 +30,7 @@ services:
 
   # Extraction service (Python OCR) - for server-side image processing
   extraction:
-    image: ghcr.io/codyseavey/sudoku/extraction:${IMAGE_TAG:-latest}
+    image: ghcr.io/seavey-org/sudoku/extraction:${IMAGE_TAG:-latest}
     container_name: sudoku-extraction
     # Port 5001 exposed only within Docker network
     expose:

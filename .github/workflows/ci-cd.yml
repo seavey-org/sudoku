@@ -10,7 +10,7 @@ env:
   GO_VERSION: '1.24'
   NODE_VERSION: '20'
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ghcr.io/${{ github.repository }}
+  IMAGE_PREFIX: ghcr.io/seavey-org/sudoku
 
 jobs:
   check-changes:
@@ -140,7 +140,8 @@ jobs:
         run: npm run build
 
   retrain-models:
-    runs-on: self-hosted
+    runs-on:
+      group: homelab-runners
     needs: [validate-test-data, check-changes]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.check-changes.outputs.test_data == 'true'
     defaults:
@@ -331,7 +332,8 @@ jobs:
           cache-to: type=gha,mode=max
 
   deploy:
-    runs-on: [self-hosted, fedora]
+    runs-on:
+      group: homelab-runners
     needs: [build-push-app, build-push-extraction, check-changes]
     if: |
       always() &&

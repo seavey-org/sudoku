@@ -19,7 +19,8 @@ on:
 
 jobs:
   retrain-models:
-    runs-on: self-hosted
+    runs-on:
+      group: homelab-runners
     permissions:
       contents: write  # Required to push commits
     defaults:
