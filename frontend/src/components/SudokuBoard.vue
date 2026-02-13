@@ -1144,7 +1144,7 @@ onUnmounted(() => {
 .loading {
   font-size: 1.5rem;
   font-weight: bold;
-  color: #374151;
+  color: #404040;
   padding: 2rem;
 }
 
@@ -1155,7 +1155,7 @@ onUnmounted(() => {
 .header-status {
     text-align: center;
     margin-bottom: 1rem;
-    color: #374151;
+    color: #404040;
 }
 
 :where(.dark, .dark *) .header-status {
@@ -1166,7 +1166,7 @@ onUnmounted(() => {
     text-align: center;
     font-size: 2rem;
     font-weight: bold;
-    color: #374151;
+    color: #404040;
     margin-bottom: 1rem;
     font-variant-numeric: tabular-nums;
 }
@@ -1207,8 +1207,8 @@ onUnmounted(() => {
 }
 
 :where(.dark, .dark *) .grid {
-  background-color: #1f2937;
-  border-color: #374151;
+  background-color: #262626;
+  border-color: #404040;
 }
 
 .paused-overlay {
@@ -1565,7 +1565,7 @@ button.game-btn.active {
 .message {
     font-weight: bold;
     font-size: 1.1rem;
-    color: #374151;
+    color: #404040;
     text-align: center;
 }
 
@@ -1638,7 +1638,7 @@ button.game-btn.active {
 
 .instruction {
     font-size: 0.9rem;
-    color: #374151;
+    color: #404040;
 }
 
 :where(.dark, .dark *) .instruction {
@@ -1963,13 +1963,13 @@ button.game-btn.active {
 
 /* Dark mode overrides */
 :where(.dark, .dark *) .pad-btn {
-    background-color: #374151;
+    background-color: #404040;
     color: #f3f4f6;
-    border-color: #4b5563;
+    border-color: #525252;
 }
 
 :where(.dark, .dark *) .pad-btn:active {
-    background-color: #4b5563;
+    background-color: #525252;
 }
 
 :where(.dark, .dark *) .clear-btn {
@@ -1986,7 +1986,7 @@ button.game-btn.active {
 }
 
 :where(.dark, .dark *) .value-input.fixed {
-    color: #111827;
+    color: #171717;
 }
 
 :where(.dark, .dark *) .candidate-cell {
